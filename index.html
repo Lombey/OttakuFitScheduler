@@ -304,7 +304,7 @@
             // Filtros
             const [filterDate, setFilterDate] = useState(getTodayString());
             const [studentFilter, setStudentFilter] = useState('Todos');
-            const [coachPaymentFilter, setCoachPaymentFilter] = useState('all'); // all, pending, paid
+            const [coachPaymentFilter, setCoachPaymentFilter] = useState('all'); // all, pending, paid, none
             const [selectedStudentFilter, setSelectedStudentFilter] = useState('');
             
             // Estados UI
@@ -1138,7 +1138,7 @@
                         ...prev,
                         [dayIndex]: { 
                             ...prev[dayIndex], 
-                            ranges: [...prev[dayIndex].ranges, { start: 12, end: 13 }] 
+                            ranges: [...prev[dayIndex].ranges, { start: 12, end: 13 }] // Default new range
                         }
                     }));
                 };
@@ -1586,8 +1586,12 @@
             if (profile.role === 'coach') {
                 if (filterDate) { myAppointments = myAppointments.filter(app => app.date === filterDate); }
                 if (selectedStudentFilter) { myAppointments = myAppointments.filter(app => app.studentEmail === selectedStudentFilter); }
+                // Nuevo Filtro: Pendientes de pago
                 if (coachPaymentFilter === 'pending') { myAppointments = myAppointments.filter(app => (app.status === 'Confirmado' || app.status === 'Asistido') && app.paymentStatus !== 'paid'); }
+                // Nuevo Filtro: Pagados
                 else if (coachPaymentFilter === 'paid') { myAppointments = myAppointments.filter(app => app.paymentStatus === 'paid'); }
+                // Nuevo Filtro: Solo Pendientes (sin confirmar)
+                else if (coachPaymentFilter === 'unconfirmed') { myAppointments = myAppointments.filter(app => app.status === 'Pendiente'); }
             }
             
             // Filtro del Estudiante
@@ -1690,6 +1694,7 @@
                                         </div>
                                         <div className="flex gap-2 mt-2 sm:mt-0">
                                             <button onClick={() => setCoachPaymentFilter('all')} className={`p-2 rounded-full border transition ${coachPaymentFilter === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`} title="Todos"><Icon name="list" size={16}/></button>
+                                            <button onClick={() => setCoachPaymentFilter('unconfirmed')} className={`p-2 rounded-full border transition ${coachPaymentFilter === 'unconfirmed' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`} title="Pendientes de Confirmación"><Icon name="calendar" size={16}/></button>
                                             <button onClick={() => setCoachPaymentFilter('pending')} className={`p-2 rounded-full border transition ${coachPaymentFilter === 'pending' ? 'bg-orange-100 text-orange-600 border-orange-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`} title="Pendientes de Pago"><Icon name="clock" size={16}/></button>
                                             <button onClick={() => setCoachPaymentFilter('paid')} className={`p-2 rounded-full border transition ${coachPaymentFilter === 'paid' ? 'bg-green-100 text-green-600 border-green-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`} title="Pagados"><Icon name="dollar-sign" size={16}/></button>
                                         </div>
