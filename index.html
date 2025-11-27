@@ -85,7 +85,8 @@
 
         // --- Gemini API Helper ---
         const callGemini = async (prompt) => {
-            const apiKey = ""; 
+            const apiKey = ""; // API Key se inyecta en el entorno de prueba
+            
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
             try {
@@ -98,12 +99,59 @@
             }
         };
 
-        // --- Firebase Init ---
-        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
+        // --- Firebase Configuration & Initialization (HÍBRIDO) ---
+        
+        let firebaseConfig;
+        let appId;
+
+        // 1. Intentar cargar configuración del entorno (Para que funcione el botón "Preview" aquí)
+        if (window.__firebase_config) {
+            try {
+                firebaseConfig = JSON.parse(window.__firebase_config);
+                appId = window.__app_id || 'default-app-id';
+                console.log("Cargando configuración de entorno de prueba.");
+            } catch (e) {
+                console.error("Error parseando config de entorno", e);
+            }
+        }
+
+        // 2. Si no hay config de entorno (Estás en GitHub/Producción), usar la manual con TUS DATOS
+        if (!firebaseConfig) {
+            // --- CONFIGURACIÓN PARA GITHUB / PRODUCCIÓN ---
+            // DATOS REALES DE FIREBASE PROPORCIONADOS POR MARTIN
+            firebaseConfig = {
+                apiKey: "AIzaSyBa_YrZXpzrsLqHpLZP22DkFJ4M80epuyw",
+                authDomain: "ottakufit-scheduler.firebaseapp.com",
+                projectId: "ottakufit-scheduler",
+                storageBucket: "ottakufit-scheduler.firebasestorage.app",
+                messagingSenderId: "382792722952",
+                appId: "1:382792722952:web:183878320850e456bcbfbd",
+                measurementId: "G-WK7JE75H96"
+            };
+            appId = 'ottaku-production-v1'; // ID fijo para producción
+        }
+
+        // 3. Validación final antes de iniciar
+        // Verificamos si projectId sigue siendo el placeholder (ya no debería serlo)
+        if (firebaseConfig.projectId === "TU_PROYECTO_ID" && !window.__firebase_config) {
+            console.error("¡FALTA CONFIGURAR FIREBASE!");
+            document.body.innerHTML = `
+                <div style="display:flex; height:100vh; align-items:center; justify-content:center; flex-direction:column; font-family:sans-serif; text-align:center; padding:20px; background-color: #fef2f2;">
+                    <h1 style="color:#ef4444; font-size:24px; margin-bottom:10px;">⚠️ Configuración Incompleta</h1>
+                    <p style="color:#374151; max-width:600px; line-height: 1.6;">
+                        Error de configuración. Revisa el archivo index.html.
+                    </p>
+                </div>
+            `;
+            throw new Error("Firebase config incomplete"); // Detener ejecución
+        }
+
+        // Inicialización
         if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
         const auth = firebase.auth();
         const db = firebase.firestore();
-        const appId = window.__app_id || 'default-app-id';
+        
+        // Definición de colecciones
         const getAppointmentsCollection = () => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('appointments');
         const getUsersCollection = () => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users');
 
@@ -247,7 +295,7 @@
                     if (!auth.currentUser) await auth.signInAnonymously();
                     const userProfile = await fetchUserProfile(email, role);
                     setProfile(userProfile);
-                } catch (error) { console.error(error); alert("Error al conectar."); } 
+                } catch (error) { console.error(error); alert("Error al conectar: " + error.message); } 
                 finally { setIsLoginLoading(false); }
             };
 
@@ -294,7 +342,7 @@
                 const formData = new FormData(e.target);
                 const date = formData.get('date');
                 const time = formData.get('time');
-                const message = formData.get('message'); // Mensaje del alumno
+                const message = formData.get('message'); 
 
                 const now = new Date();
                 const selectedDateTime = new Date(`${date}T${time}:00`);
@@ -309,7 +357,7 @@
                         studentId: user.uid,
                         date, time, type: selectedType,
                         message: message || "",
-                        coachMessage: "", // Inicialmente vacío
+                        coachMessage: "", 
                         status: 'Pendiente',
                         createdAt: new Date().toISOString()
                     });
