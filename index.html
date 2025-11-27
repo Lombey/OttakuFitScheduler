@@ -87,31 +87,27 @@
             if (nextHour > 21 || (nextHour === 21 && nextMinutes > 45)) {
                 return null; 
             }
-            // Turnos son solo en punto (cada hora)
-            nextHour = Math.ceil(now.getHours()); 
-            if(now.getMinutes() > 0) nextHour += 1;
-            
-            return `${String(nextHour).padStart(2, '0')}:00`;
+            return `${String(nextHour).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
         };
         
         // Helper para formatear fecha a texto amigable
-        const formatDate = (dateString, includeYear = true) => {
+        const formatDate = (dateString) => {
             if (!dateString) return '';
             const date = new Date(dateString + 'T12:00:00');
-            const options = { weekday: 'long', month: 'long', day: 'numeric' };
-            if (includeYear) options.year = 'numeric';
-            
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
             const formatted = date.toLocaleDateString('es-ES', options);
             return formatted.charAt(0).toUpperCase() + formatted.slice(1);
         };
         
-        // Genera todos los slots de 1 hora (base)
         const generateTimeSlots = () => {
             const slots = [];
             for (let h = 7; h <= 21; h++) {
-                 // Turnos solo en punto (ej: 12:00, 13:00)
-                const hour = String(h).padStart(2, '0');
-                slots.push(`${hour}:00`);
+                for (let m = 0; m < 60; m += 15) {
+                    if (h === 21 && m > 45) break;
+                    const hour = String(h).padStart(2, '0');
+                    const minute = String(m).padStart(2, '0');
+                    slots.push(`${hour}:${minute}`);
+                }
             }
             return slots;
         };
@@ -140,7 +136,6 @@
             
             // Iterar sobre los rangos configurados
             dayConfig.ranges.forEach(range => {
-                // Generar slots de 1 hora
                 for (let h = range.start; h < range.end; h++) {
                     const hourStr = String(h).padStart(2, '0') + ":00";
                     slots.push(hourStr);
@@ -150,7 +145,7 @@
             return slots.sort();
         };
 
-        // DEFAULT CONFIG (Fallback) - LUN-VIE 12-21, SAB 13-16, DOM CERRADO
+        // DEFAULT CONFIG (Fallback)
         const DEFAULT_SCHEDULE = {
             0: { active: false, ranges: [] }, // Domingo
             1: { active: true, ranges: [{ start: 12, end: 21 }] }, // Lunes
@@ -204,7 +199,7 @@
              const busyTimes = appointments
                 .filter(app => app.date === date && app.status !== 'Rechazado' && app.status !== 'Cancelado' && app.status !== 'Reprogramado')
                 .map(app => app.time);
-            return !busyTimes.includes(time); 
+            return !busyTimes.includes(time + ':00'); 
         };
 
         // Helpers Financieros
@@ -278,7 +273,7 @@
                 'calendar-plus': <><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M10 16h4"/><path d="M12 14v4"/></>,
                 'dollar-sign': <><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>,
                 'user-plus': <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" x2="20" y1="8" y2="14"/><line x1="23" x2="17" y1="11" y2="11"/></>,
-                'settings': <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></>,
+                'settings': <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></>,
                 'map': <><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></>,
                 'tag': <><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><circle cx="7" cy="7" r="2"/></>,
                 'list': <><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></>,
@@ -351,7 +346,7 @@
             // Filtros
             const [filterDate, setFilterDate] = useState(getTodayString());
             const [studentFilter, setStudentFilter] = useState('Todos');
-            const [coachPaymentFilter, setCoachPaymentFilter] = useState('all'); // all, pending, paid, unconfirmed
+            const [coachPaymentFilter, setCoachPaymentFilter] = useState('all'); // all, pending, paid
             const [selectedStudentFilter, setSelectedStudentFilter] = useState('');
             
             // Estados UI
@@ -366,7 +361,7 @@
             const [showBlockModal, setShowBlockModal] = useState(false);
             const [showRescheduleModal, setShowRescheduleModal] = useState(false);
             const [showScheduleConfig, setShowScheduleConfig] = useState(false);
-            const [showFinancialModal, setShowFinancialModal] = useState(false); 
+            const [showFinancialModal, setShowFinancialModal] = useState(false); // Nuevo modal de finanzas
             const [showEditProfileSelect, setShowEditProfileSelect] = useState(false);
             const [rescheduleTarget, setRescheduleTarget] = useState(null);
             const [exportStart, setExportStart] = useState(getTodayString());
@@ -378,13 +373,13 @@
             const [currentPayApp, setCurrentPayApp] = useState(null);
             const [planPrices, setPlanPrices] = useState({ basic: 0, plus: 0, pro: 0 });
             const [coachSchedule, setCoachSchedule] = useState({
-                0: { active: false, ranges: [] }, // Domingo
-                1: { active: true, ranges: [{ start: 12, end: 21 }] }, // Lunes
-                2: { active: true, ranges: [{ start: 12, end: 21 }] }, // Martes
-                3: { active: true, ranges: [{ start: 12, end: 21 }] }, // Miercoles
-                4: { active: true, ranges: [{ start: 12, end: 21 }] }, // Jueves
-                5: { active: true, ranges: [{ start: 12, end: 21 }] }, // Viernes
-                6: { active: true, ranges: [{ start: 13, end: 16 }] }  // Sabado
+                0: { active: false, ranges: [] },
+                1: { active: true, ranges: [{ start: 12, end: 21 }] },
+                2: { active: true, ranges: [{ start: 12, end: 21 }] },
+                3: { active: true, ranges: [{ start: 12, end: 21 }] },
+                4: { active: true, ranges: [{ start: 12, end: 21 }] },
+                5: { active: true, ranges: [{ start: 12, end: 21 }] },
+                6: { active: true, ranges: [{ start: 13, end: 16 }] } 
             });
 
             useEffect(() => {
@@ -421,19 +416,25 @@
                     setBlocks(blks);
                 }, (error) => console.error("Error leyendo bloqueos:", error));
                 
-                // Fetch students and coach config
-                getUsersCollection().get().then(snapshot => {
-                    const st = snapshot.docs.map(doc => doc.data()).filter(u => u.role === 'student');
-                    setStudents(st.sort((a, b) => a.name.localeCompare(b.name)));
-                    
-                    const coachDoc = snapshot.docs.find(doc => doc.id === 'gastonparrado@me.com');
-                    if (coachDoc) {
-                        const data = coachDoc.data();
-                        if (data.planPrices) setPlanPrices(data.planPrices);
-                        // If coach has configured schedule, use it. Otherwise, use default state.
-                        if (data.schedule) setCoachSchedule(data.schedule);
-                    }
-                });
+                if (profile && profile.role === 'coach') {
+                    getUsersCollection().get().then(snapshot => {
+                        const st = snapshot.docs.map(doc => doc.data()).filter(u => u.role === 'student');
+                        setStudents(st.sort((a, b) => a.name.localeCompare(b.name)));
+                        
+                        const coachDoc = snapshot.docs.find(doc => doc.id === profile.email);
+                        if (coachDoc) {
+                            const data = coachDoc.data();
+                            if (data.planPrices) setPlanPrices(data.planPrices);
+                            if (data.schedule) setCoachSchedule(data.schedule);
+                        }
+                    });
+                } else {
+                    getUsersCollection().doc('gastonparrado@me.com').get().then(doc => {
+                         if (doc.exists && doc.data().schedule) {
+                             setCoachSchedule(doc.data().schedule);
+                         }
+                    });
+                }
 
                 return () => {
                     unsubscribeDb();
@@ -465,24 +466,53 @@
                 const password = formData.get('password');
                 const isCoach = email === 'gastonparrado@me.com';
                 
+                // Ensure Auth First
                 if (!auth.currentUser) {
-                    try { await auth.signInAnonymously(); } catch (e) { console.error("Auth error", e); alert("Error de conexión inicial."); setIsLoginLoading(false); return; }
+                    try {
+                         await auth.signInAnonymously();
+                    } catch (e) {
+                        console.error("Auth error", e);
+                        alert("Error de conexión inicial.");
+                        setIsLoginLoading(false);
+                        return;
+                    }
                 }
 
+                // Validación
                 let isValid = false;
+                
+                // Verificacion directa en DB para todos
                 try {
                     const userDoc = await getUsersCollection().doc(email).get();
                     if (userDoc.exists) {
                         const userData = userDoc.data();
-                        if (userData.password && userData.password === password) { isValid = true; } 
-                        else if (isCoach && !userData.password && password === '1234') { isValid = true; }
+                        if (userData.password && userData.password === password) {
+                            isValid = true;
+                        } 
+                        else if (isCoach && !userData.password && password === '1234') {
+                            isValid = true;
+                        }
                     } else {
-                        if (isCoach && password === '1234') { isValid = true; } 
-                        else { alert("Usuario no encontrado. Por favor regístrate."); setIsLoginLoading(false); return; }
+                        if (isCoach && password === '1234') {
+                            isValid = true;
+                        } else {
+                            alert("Usuario no encontrado. Por favor regístrate.");
+                            setIsLoginLoading(false);
+                            return;
+                        }
                     }
-                } catch (error) { console.error("Error verificando usuario:", error); alert("Error de conexión."); setIsLoginLoading(false); return; }
+                } catch (error) {
+                    console.error("Error verificando usuario:", error);
+                    alert("Error de conexión.");
+                    setIsLoginLoading(false);
+                    return;
+                }
 
-                if (!isValid) { alert("Contraseña incorrecta."); setIsLoginLoading(false); return; }
+                if (!isValid) {
+                    alert("Contraseña incorrecta.");
+                    setIsLoginLoading(false);
+                    return;
+                }
 
                 try {
                     const role = isCoach ? 'coach' : 'student';
@@ -572,19 +602,23 @@
                 try {
                     let datesToBook = [date];
                     
-                    // Calcular fechas de repetición (Solo semanal)
-                    if (recurrence === 'weekly_1') { for (let i=1; i<4; i++) datesToBook.push(addDays(date, i*7)); }
-                    else if (recurrence === 'weekly_2') { for (let i=1; i<8; i++) datesToBook.push(addDays(date, i*7)); }
-                    else if (recurrence === 'weekly_2_weeks') { for (let i=1; i<2; i++) datesToBook.push(addDays(date, i*7)); }
-                    else if (recurrence === 'weekly_3_weeks') { for (let i=1; i<3; i++) datesToBook.push(addDays(date, i*7)); }
-
+                    // Calcular fechas de repetición
+                    if (recurrence === 'weekly_1') {
+                        for (let i=1; i<4; i++) datesToBook.push(addDays(date, i*7));
+                    } else if (recurrence === 'weekly_2') {
+                        for (let i=1; i<8; i++) datesToBook.push(addDays(date, i*7));
+                    } else if (recurrence === 'daily_1') {
+                        for (let i=1; i<5; i++) datesToBook.push(addDays(date, i));
+                    } else if (recurrence === 'weekly_2_weeks') { 
+                        for (let i=1; i<2; i++) datesToBook.push(addDays(date, i*7));
+                    } else if (recurrence === 'weekly_3_weeks') { 
+                        for (let i=1; i<3; i++) datesToBook.push(addDays(date, i*7));
+                    }
 
                     let conflict = false;
                     for (let d of datesToBook) {
-                        // Check if the slot is available based on all rules (schedule, blocks, other appointments)
-                         const availableSlots = getAvailableTimeSlots(d, appointments, blocks, coachSchedule);
-                         if (!availableSlots.includes(time)) {
-                             conflict = `El horario del día ${formatDate(d)} a las ${time} no está disponible.`;
+                         if (!isSlotAvailable(d, time + ':00', appointments)) {
+                             conflict = `El horario del día ${d} a las ${time} no está disponible.`;
                              break;
                          }
                     }
@@ -639,15 +673,15 @@
                     let datesToBook = [date];
                     if (recurrence === 'weekly_1') { for (let i=1; i<4; i++) datesToBook.push(addDays(date, i*7)); }
                     else if (recurrence === 'weekly_2') { for (let i=1; i<8; i++) datesToBook.push(addDays(date, i*7)); }
+                    else if (recurrence === 'daily_1') { for (let i=1; i<5; i++) datesToBook.push(addDays(date, i)); }
                     else if (recurrence === 'weekly_2_weeks') { for (let i=1; i<2; i++) datesToBook.push(addDays(date, i*7)); }
                     else if (recurrence === 'weekly_3_weeks') { for (let i=1; i<3; i++) datesToBook.push(addDays(date, i*7)); }
 
                     let conflict = false;
                     for (let d of datesToBook) {
-                         // CORRECCIÓN CLAVE: Usar getAvailableTimeSlots y chequear si el slot está en la lista.
                          const availableSlots = getAvailableTimeSlots(d, appointments, blocks, coachSchedule);
-                         if (!availableSlots.includes(time)) { 
-                             conflict = `El horario del día ${formatDate(d)} a las ${time} no está disponible (Ocupado, Bloqueado o fuera de horario).`;
+                         if (!availableSlots.includes(time + ':00')) {
+                             conflict = `El horario del día ${d} a las ${time} no está disponible (Ocupado, Bloqueado o fuera de horario).`;
                              break;
                          }
                     }
@@ -1006,61 +1040,6 @@
                 const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
                 window.open(url, '_blank');
             };
-            
-            // --- Coach Edit Profile Selector Modal ---
-            const CoachEditProfileModal = () => {
-                const [targetEmail, setTargetEmail] = useState(profile.email);
-                
-                const handleLoadProfile = async () => {
-                    if (targetEmail === profile.email) {
-                        setView('edit-profile');
-                        setShowEditProfileSelect(false);
-                        return;
-                    }
-                    
-                    const targetStudent = students.find(s => s.email === targetEmail);
-                    if (targetStudent) {
-                        setProfile(targetStudent); 
-                        setView('edit-profile');
-                        setShowEditProfileSelect(false);
-                    } else {
-                        alert("Perfil de alumno no encontrado.");
-                    }
-                };
-                
-                return (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
-                        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
-                            <div className="bg-indigo-600 p-4 text-white flex justify-between items-center">
-                                <h3 className="font-bold text-lg flex items-center gap-2"><Icon name="edit" size={20}/> Editar Perfiles</h3>
-                                <button onClick={() => setShowEditProfileSelect(false)}><Icon name="x-circle"/></button>
-                            </div>
-                            
-                            <div className="p-6 space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Seleccionar Usuario</label>
-                                    <select 
-                                        className="w-full border p-2 rounded text-sm" 
-                                        value={targetEmail} 
-                                        onChange={(e) => setTargetEmail(e.target.value)}
-                                    >
-                                        <option value={profile.email}>{profile.name} (Coach - Mi Perfil)</option>
-                                        {students.map(s => (
-                                            <option key={s.email} value={s.email}>{s.name} ({s.email})</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <button 
-                                    onClick={handleLoadProfile}
-                                    className="w-full py-2 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700"
-                                >
-                                    Abrir Perfil
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
 
             // --- Coach Availability View ---
             const CoachAvailabilityView = () => {
@@ -1123,7 +1102,7 @@
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
                         <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
                             <div className="bg-indigo-600 p-4 text-white flex justify-between items-center">
-                                <h3 className="font-bold text-lg flex items-center gap-2"><Icon name="calendar-plus" size={20}/> Agendar Clase</h3>
+                                <h3 className="font-bold text-lg flex items-center gap-2"><Icon name="user-plus" size={20}/> Agendar Alumno</h3>
                                 <button onClick={() => setShowCoachBookingModal(false)}><Icon name="x-circle"/></button>
                             </div>
                             <form onSubmit={handleCoachBook} className="p-6 space-y-4">
@@ -1134,7 +1113,7 @@
                                 {/* Recurrence Option */}
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">¿Se repite?</label>
-                                    <select name="recurrence" className="w-full border p-2 rounded text-sm"><option value="none">No se repite</option><option value="weekly_1">Cada semana (1 mes)</option><option value="weekly_2">Cada semana (2 meses)</option><option value="weekly_2_weeks">Cada semana (2 semanas)</option><option value="weekly_3_weeks">Cada semana (3 semanas)</option></select>
+                                    <select name="recurrence" className="w-full border p-2 rounded text-sm"><option value="none">No se repite</option><option value="daily_1">Todos los días (Lun-Vie) por 1 semana</option><option value="weekly_1">Cada semana (1 mes)</option><option value="weekly_2">Cada semana (2 meses)</option><option value="weekly_2_weeks">Cada semana (2 semanas)</option><option value="weekly_3_weeks">Cada semana (3 semanas)</option></select>
                                 </div>
                                 
                                 {/* Payment Option - Coach Only */}
@@ -1166,7 +1145,7 @@
                 const [startTime, setStartTime] = useState('12:00');
                 const [endTime, setEndTime] = useState('13:00');
                 
-                const timeOptions = getSlotsForDate(getTodayString(), coachSchedule).map(t => <option key={t} value={t}>{t}</option>);
+                const timeOptions = generateTimeSlots().map(t => <option key={t} value={t}>{t}</option>);
 
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
@@ -1191,24 +1170,46 @@
                             </div>
 
                             <form onSubmit={handleCreateBlock} className="p-6 space-y-4">
-                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha</label><input required type="date" name="date" className="w-full border p-2 rounded text-sm" min={getTodayString()}/></div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha</label>
+                                    <input required type="date" name="date" className="w-full border p-2 rounded text-sm" min={getTodayString()}/>
+                                </div>
                                 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tipo de Bloqueo</label>
                                     <div className="flex gap-4">
-                                        <label className="flex items-center gap-2 text-sm"><input type="radio" name="type" value="full" checked={blockType === 'full'} onChange={() => setBlockType('full')} />Día Completo</label>
-                                        <label className="flex items-center gap-2 text-sm"><input type="radio" name="type" value="partial" checked={blockType === 'partial'} onChange={() => setBlockType('partial')} />Rango Horario</label>
+                                        <label className="flex items-center gap-2 text-sm">
+                                            <input type="radio" name="type" value="full" checked={blockType === 'full'} onChange={() => setBlockType('full')} />
+                                            Día Completo
+                                        </label>
+                                        <label className="flex items-center gap-2 text-sm">
+                                            <input type="radio" name="type" value="partial" checked={blockType === 'partial'} onChange={() => setBlockType('partial')} />
+                                            Rango Horario
+                                        </label>
                                     </div>
                                 </div>
 
                                 {blockType === 'partial' && (
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Inicio</label><select name="startTime" className="w-full border p-2 rounded text-sm" value={startTime} onChange={e => setStartTime(e.target.value)}>{timeOptions}</select></div>
-                                        <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fin</label><select name="endTime" className="w-full border p-2 rounded text-sm" value={endTime} onChange={e => setEndTime(e.target.value)}>{timeOptions}</select></div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Inicio</label>
+                                            <select name="startTime" className="w-full border p-2 rounded text-sm" value={startTime} onChange={e => setStartTime(e.target.value)}>
+                                                {timeOptions}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fin</label>
+                                            <select name="endTime" className="w-full border p-2 rounded text-sm" value={endTime} onChange={e => setEndTime(e.target.value)}>
+                                                {timeOptions}
+                                            </select>
+                                        </div>
                                     </div>
                                 )}
 
-                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Motivo (Opcional)</label><input type="text" name="reason" className="w-full border p-2 rounded text-sm" placeholder="Ej: Vacaciones, Médico..." /></div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Motivo (Opcional)</label>
+                                    <input type="text" name="reason" className="w-full border p-2 rounded text-sm" placeholder="Ej: Vacaciones, Médico..." />
+                                </div>
 
                                 <button type="submit" className="w-full py-2 bg-red-600 text-white rounded font-medium hover:bg-red-700">Aplicar Bloqueo</button>
                             </form>
@@ -1216,18 +1217,28 @@
                     </div>
                 );
             };
-            
+
             // --- Schedule Configuration Modal (NUEVO) ---
             const ScheduleConfigModal = () => {
+                // Local state for editing the schedule before saving
                 const [tempSchedule, setTempSchedule] = useState(JSON.parse(JSON.stringify(coachSchedule)));
                 const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
                 const handleToggleDay = (dayIndex) => {
-                    setTempSchedule(prev => ({...prev, [dayIndex]: { ...prev[dayIndex], active: !prev[dayIndex].active }}));
+                    setTempSchedule(prev => ({
+                        ...prev,
+                        [dayIndex]: { ...prev[dayIndex], active: !prev[dayIndex].active }
+                    }));
                 };
 
                 const handleAddRange = (dayIndex) => {
-                    setTempSchedule(prev => ({...prev, [dayIndex]: { ...prev[dayIndex], ranges: [...prev[dayIndex].ranges, { start: 12, end: 13 }] }}));
+                    setTempSchedule(prev => ({
+                        ...prev,
+                        [dayIndex]: { 
+                            ...prev[dayIndex], 
+                            ranges: [...prev[dayIndex].ranges, { start: 12, end: 13 }] // Default new range
+                        }
+                    }));
                 };
 
                 const handleRemoveRange = (dayIndex, rangeIndex) => {
@@ -1258,7 +1269,10 @@
                     }
                 };
 
-                const hourOptions = Array.from({length: 24}, (_, i) => (<option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>));
+                // Helper to render hour options 0-23
+                const hourOptions = Array.from({length: 24}, (_, i) => (
+                    <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
+                ));
 
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
@@ -1277,10 +1291,19 @@
                                             <div key={index} className={`border rounded-lg p-3 ${dayConfig.active ? 'bg-white border-indigo-200' : 'bg-gray-50 border-gray-200'}`}>
                                                 <div className="flex justify-between items-center mb-2">
                                                     <label className="flex items-center gap-2 font-bold text-sm text-gray-700 cursor-pointer">
-                                                        <input type="checkbox" checked={dayConfig.active} onChange={() => handleToggleDay(index)} className="w-4 h-4 text-indigo-600 rounded"/>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={dayConfig.active} 
+                                                            onChange={() => handleToggleDay(index)}
+                                                            className="w-4 h-4 text-indigo-600 rounded"
+                                                        />
                                                         {dayName}
                                                     </label>
-                                                    {dayConfig.active && (<button onClick={() => handleAddRange(index)} className="text-indigo-600 hover:text-indigo-800 text-xs flex items-center gap-1"><Icon name="plus" size={14}/> Agregar Turno</button>)}
+                                                    {dayConfig.active && (
+                                                        <button onClick={() => handleAddRange(index)} className="text-indigo-600 hover:text-indigo-800 text-xs flex items-center gap-1">
+                                                            <Icon name="plus" size={14}/> Agregar Turno
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 
                                                 {dayConfig.active && (
@@ -1288,10 +1311,24 @@
                                                         {dayConfig.ranges.map((range, rIndex) => (
                                                             <div key={rIndex} className="flex items-center gap-2 text-sm">
                                                                 <span className="text-gray-500 text-xs">De</span>
-                                                                <select value={range.start} onChange={(e) => handleUpdateRange(index, rIndex, 'start', e.target.value)} className="border rounded px-1 py-0.5 w-20 text-sm">{hourOptions}</select>
+                                                                <select 
+                                                                    value={range.start} 
+                                                                    onChange={(e) => handleUpdateRange(index, rIndex, 'start', e.target.value)}
+                                                                    className="border rounded px-1 py-0.5 w-20 text-sm"
+                                                                >
+                                                                    {hourOptions}
+                                                                </select>
                                                                 <span className="text-gray-500 text-xs">a</span>
-                                                                <select value={range.end} onChange={(e) => handleUpdateRange(index, rIndex, 'end', e.target.value)} className="border rounded px-1 py-0.5 w-20 text-sm">{hourOptions}</select>
-                                                                <button onClick={() => handleRemoveRange(index, rIndex)} className="text-red-400 hover:text-red-600 ml-auto"><Icon name="trash" size={14}/></button>
+                                                                <select 
+                                                                    value={range.end} 
+                                                                    onChange={(e) => handleUpdateRange(index, rIndex, 'end', e.target.value)}
+                                                                    className="border rounded px-1 py-0.5 w-20 text-sm"
+                                                                >
+                                                                    {hourOptions}
+                                                                </select>
+                                                                <button onClick={() => handleRemoveRange(index, rIndex)} className="text-red-400 hover:text-red-600 ml-auto">
+                                                                    <Icon name="trash" size={14}/>
+                                                                </button>
                                                             </div>
                                                         ))}
                                                         {dayConfig.ranges.length === 0 && <p className="text-xs text-orange-500 italic">Sin horarios definidos.</p>}
@@ -1371,6 +1408,7 @@
             const FinancialDashboardModal = () => {
                 const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
 
+                // Calculate metrics based on selected month
                 const monthlyStats = useMemo(() => {
                     if (!selectedMonth) return { total: 0, count: 0, plans: {}, topStudents: [] };
                     
@@ -1379,31 +1417,48 @@
                     const monthlyApps = appointments.filter(app => {
                         if (app.paymentStatus !== 'paid') return false;
                         const appDate = new Date(app.date);
+                        // Check year and month (Date months are 0-indexed)
                         return appDate.getFullYear() === year && appDate.getMonth() === (month - 1);
                     });
 
                     let total = 0;
                     const plans = { 'Plan Básico': 0, 'Plan Plus': 0, 'Plan Pro': 0, 'Plan Híbrido': 0 };
-                    const studentSpending = {}; 
+                    const studentSpending = {}; // Map to track spending by student email
 
                     monthlyApps.forEach(app => {
                         const amount = parseAmount(app.paymentAmount);
                         total += amount;
                         
-                        if (app.paymentPlan && plans.hasOwnProperty(app.paymentPlan)) { plans[app.paymentPlan] += amount; } 
-                        else if (app.paymentPlan && app.paymentPlan.includes('Hibrido')) { plans['Plan Híbrido'] += amount; }
+                        // Categorize plan
+                        if (app.paymentPlan && plans.hasOwnProperty(app.paymentPlan)) {
+                            plans[app.paymentPlan] += amount;
+                        } else if (app.paymentPlan && app.paymentPlan.includes('Hibrido')) {
+                             plans['Plan Híbrido'] += amount;
+                        }
                         
+                        // Track student spending
                         if (app.studentEmail) {
-                            if (!studentSpending[app.studentEmail]) { studentSpending[app.studentEmail] = { name: app.studentName, amount: 0, count: 0 }; }
+                            if (!studentSpending[app.studentEmail]) {
+                                studentSpending[app.studentEmail] = { 
+                                    name: app.studentName, 
+                                    amount: 0, 
+                                    count: 0 
+                                };
+                            }
                             studentSpending[app.studentEmail].amount += amount;
                             studentSpending[app.studentEmail].count += 1;
                         }
                     });
 
-                    const topStudents = Object.values(studentSpending).sort((a, b) => b.amount - a.amount).slice(0, 5);
+                    // Sort and get Top 5 Students
+                    const topStudents = Object.values(studentSpending)
+                        .sort((a, b) => b.amount - a.amount)
+                        .slice(0, 5);
+
                     return { total, count: monthlyApps.length, plans, topStudents };
                 }, [selectedMonth, appointments]);
 
+                // Calculate Weekly Stats (Current Week based on today)
                 const weeklyStats = useMemo(() => {
                     const today = new Date();
                     const currentWeekNo = getWeekNumber(today);
@@ -1422,10 +1477,13 @@
 
                 const totalHistorical = useMemo(() => {
                     let total = 0;
-                    appointments.forEach(app => { if (app.paymentStatus === 'paid') total += parseAmount(app.paymentAmount); });
+                    appointments.forEach(app => {
+                        if (app.paymentStatus === 'paid') total += parseAmount(app.paymentAmount);
+                    });
                     return total;
                 }, [appointments]);
 
+                // Find max value for simple chart scaling
                 const maxPlanVal = Math.max(...Object.values(monthlyStats.plans), 1);
                 const maxStudentVal = monthlyStats.topStudents.length > 0 ? monthlyStats.topStudents[0].amount : 1;
 
@@ -1438,15 +1496,90 @@
                             </div>
                             
                             <div className="p-6 overflow-y-auto grow space-y-6">
+                                {/* Global Stats */}
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 text-center"><div className="text-xs text-emerald-600 uppercase font-bold">Semana Actual</div><div className="text-2xl font-bold text-emerald-800">${weeklyStats.total}</div><div className="text-xs text-gray-500">{weeklyStats.count} turnos</div></div>
-                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-center"><div className="text-xs text-blue-600 uppercase font-bold">Total Histórico</div><div className="text-2xl font-bold text-blue-800">${totalHistorical}</div></div>
+                                    <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 text-center">
+                                        <div className="text-xs text-emerald-600 uppercase font-bold">Semana Actual</div>
+                                        <div className="text-2xl font-bold text-emerald-800">${weeklyStats.total}</div>
+                                        <div className="text-xs text-gray-500">{weeklyStats.count} turnos</div>
+                                    </div>
+                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-center">
+                                        <div className="text-xs text-blue-600 uppercase font-bold">Total Histórico</div>
+                                        <div className="text-2xl font-bold text-blue-800">${totalHistorical}</div>
+                                    </div>
                                 </div>
+
+                                {/* Monthly Filter & Stats */}
                                 <div className="border-t pt-4">
-                                    <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700">Ingresos Mensuales</h4><input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="text-sm border rounded p-1"/></div>
-                                    <div className="bg-gray-50 p-4 rounded-xl border text-center mb-4"><div className="text-sm text-gray-500">Total {selectedMonth}</div><div className="text-3xl font-bold text-gray-800">${monthlyStats.total}</div><div className="text-xs text-gray-400">{monthlyStats.count} turnos cobrados</div></div>
-                                    <div className="space-y-3 mb-6"><p className="text-xs font-bold text-gray-400 uppercase">Desglose por Plan</p>{Object.entries(monthlyStats.plans).map(([plan, amount]) => (<div key={plan}><div className="flex justify-between text-xs mb-1"><span className="font-medium text-gray-600">{plan}</span><span className="font-bold text-gray-800">${amount}</span></div><div className="w-full bg-gray-200 rounded-full h-2"><div className="bg-indigo-500 h-2 rounded-full transition-all duration-500" style={{ width: `${(amount / maxPlanVal) * 100}%` }}></div></div></div>))}</div>
-                                    <div className="space-y-3 border-t pt-4"><div className="flex items-center gap-2 mb-2"><Icon name="trophy" size={16} className="text-yellow-500"/><p className="text-xs font-bold text-gray-500 uppercase">Top 5 Alumnos (Mes)</p></div>{monthlyStats.topStudents.length === 0 ? (<p className="text-xs text-gray-400 italic">No hay datos suficientes este mes.</p>) : (monthlyStats.topStudents.map((student, index) => (<div key={index} className="flex items-center gap-3"><div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 ${index === 0 ? 'bg-yellow-400' : (index === 1 ? 'bg-gray-400' : (index === 2 ? 'bg-orange-400' : 'bg-indigo-200'))}`}>{index + 1}</div><div className="flex-1"><div className="flex justify-between text-xs mb-1"><span className="font-medium text-gray-700 truncate w-24">{student.name}</span><div className="text-right"><span className="font-bold text-emerald-600">${student.amount}</span><span className="text-gray-400 text-[10px] ml-1">({student.count}t)</span></div></div><div className="w-full bg-gray-100 rounded-full h-1.5"><div className="bg-emerald-400 h-1.5 rounded-full" style={{ width: `${(student.amount / maxStudentVal) * 100}%` }}></div></div></div></div>)))}</div>
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h4 className="font-bold text-gray-700">Ingresos Mensuales</h4>
+                                        <input 
+                                            type="month" 
+                                            value={selectedMonth} 
+                                            onChange={(e) => setSelectedMonth(e.target.value)}
+                                            className="text-sm border rounded p-1"
+                                        />
+                                    </div>
+                                    
+                                    <div className="bg-gray-50 p-4 rounded-xl border text-center mb-4">
+                                        <div className="text-sm text-gray-500">Total {selectedMonth}</div>
+                                        <div className="text-3xl font-bold text-gray-800">${monthlyStats.total}</div>
+                                        <div className="text-xs text-gray-400">{monthlyStats.count} turnos cobrados</div>
+                                    </div>
+
+                                    {/* Simple Bar Chart Plans */}
+                                    <div className="space-y-3 mb-6">
+                                        <p className="text-xs font-bold text-gray-400 uppercase">Desglose por Plan</p>
+                                        {Object.entries(monthlyStats.plans).map(([plan, amount]) => (
+                                            <div key={plan}>
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="font-medium text-gray-600">{plan}</span>
+                                                    <span className="font-bold text-gray-800">${amount}</span>
+                                                </div>
+                                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                                    <div 
+                                                        className="bg-indigo-500 h-2 rounded-full transition-all duration-500" 
+                                                        style={{ width: `${(amount / maxPlanVal) * 100}%` }}
+                                                    ></div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    
+                                    {/* Top 5 Students */}
+                                    <div className="space-y-3 border-t pt-4">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Icon name="trophy" size={16} className="text-yellow-500"/>
+                                            <p className="text-xs font-bold text-gray-500 uppercase">Top 5 Alumnos (Mes)</p>
+                                        </div>
+                                        
+                                        {monthlyStats.topStudents.length === 0 ? (
+                                            <p className="text-xs text-gray-400 italic">No hay datos suficientes este mes.</p>
+                                        ) : (
+                                            monthlyStats.topStudents.map((student, index) => (
+                                                <div key={index} className="flex items-center gap-3">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 ${index === 0 ? 'bg-yellow-400' : (index === 1 ? 'bg-gray-400' : (index === 2 ? 'bg-orange-400' : 'bg-indigo-200'))}`}>
+                                                        {index + 1}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="flex justify-between text-xs mb-1">
+                                                            <span className="font-medium text-gray-700 truncate w-24">{student.name}</span>
+                                                            <div className="text-right">
+                                                                <span className="font-bold text-emerald-600">${student.amount}</span>
+                                                                <span className="text-gray-400 text-[10px] ml-1">({student.count}t)</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="w-full bg-gray-100 rounded-full h-1.5">
+                                                            <div 
+                                                                className="bg-emerald-400 h-1.5 rounded-full" 
+                                                                style={{ width: `${(student.amount / maxStudentVal) * 100}%` }}
+                                                            ></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1456,7 +1589,10 @@
 
             if (loading) return <div className="min-h-screen flex items-center justify-center text-blue-600 font-bold">Cargando OttakuFitScheduler...</div>;
 
+            // Fallback safety: If profile is null here, we shouldn't render dashboard
             if (!profile) {
+                // If view is not login/register/recover, something is wrong with state sync
+                // But we can just render null or a spinner until effect redirects
                 if (view !== 'login' && view !== 'register' && view !== 'recover-password') return null;
             }
 
@@ -1616,6 +1752,7 @@
                                                 <label className="block text-xs font-semibold text-gray-500 uppercase">¿Se repite?</label>
                                                 <select name="recurrence" className="mt-1 block w-full rounded-md border-gray-300 border p-2 text-sm">
                                                     <option value="none">No se repite</option>
+                                                    <option value="daily_1">Todos los días (Lun-Vie) por 1 semana</option>
                                                     <option value="weekly_1">Cada semana (1 mes)</option>
                                                     <option value="weekly_2">Cada semana (2 meses)</option>
                                                     <option value="weekly_2_weeks">Cada semana (2 semanas)</option>
@@ -1697,7 +1834,7 @@
                                                     </span>
                                                     {/* Etiqueta de Pago */}
                                                     {(app.status === 'Confirmado' || app.status === 'Asistido') && (
-                                                        <div className="flex gap-1">
+                                                        <div className="flex flex-wrap gap-1 items-center"> {/* Added flex-wrap and items-center */}
                                                             <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wide flex items-center gap-1 border
                                                                 ${app.paymentStatus === 'paid' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                                                                 <Icon name="dollar-sign" size={12}/> {app.paymentStatus === 'paid' ? 'Abonado' : 'Pendiente Pago'}
@@ -1708,6 +1845,16 @@
                                                                     <Icon name="tag" size={12}/> {app.paymentPlan}
                                                                 </span>
                                                             )}
+                                                            {/* Edit Payment Button (New) */}
+                                                            {profile?.role === 'coach' && app.paymentStatus === 'paid' && (
+                                                                <button 
+                                                                    onClick={(e) => { e.stopPropagation(); setCurrentPayApp(app); setShowPaymentModal(true); }} 
+                                                                    className="p-1 bg-gray-100 hover:bg-blue-100 text-gray-500 hover:text-blue-600 rounded-full transition border border-gray-200"
+                                                                    title="Corregir Plan/Monto"
+                                                                >
+                                                                    <Icon name="edit" size={10}/>
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
@@ -1717,19 +1864,47 @@
                                                     {profile?.role === 'coach' && (<div className="mt-3 pt-3 border-t border-gray-100"><div className="flex items-center gap-2 text-blue-600 font-medium"><Icon name="user" size={14}/> {app.studentName}</div><div className="flex items-center gap-2 mt-1"><Icon name="phone" size={14}/> {app.studentPhone}</div></div>)}
                                                     <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100 text-sm">
                                                         {app.message && (<div className="mb-2"><span className="block text-xs font-bold text-gray-500 uppercase">Nota del Alumno:</span><p className="text-gray-700 italic">"{app.message}"</p></div>)}
-                                                        {app.coachMessage ? (<div className="mt-2 pt-2 border-t border-gray-200"><span className="block text-xs font-bold text-purple-600 uppercase">Mensaje del Coach:</span><p className="text-gray-800 font-medium">"{app.coachMessage}"</p></div>) : (profile?.role === 'coach' && app.status !== 'Cancelado' && app.status !== 'Rechazado' && app.status !== 'Asistido' && app.status !== 'Reprogramado' && (<div className="mt-2 pt-2 border-t border-gray-200"><span className="block text-xs font-bold text-gray-400 uppercase mb-1">Responder / Enviar Mensaje:</span><form onSubmit={(e) => { e.preventDefault(); handleSendCoachMessage(app.id, e.target.response.value); }} className="flex gap-2"><input type="text" name="response" className="flex-1 text-xs border rounded px-2 py-1" placeholder="Escribe aquí..." /><button type="submit" className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"><Icon name="send" size={12}/></button></form></div>))}
-                                                        {profile?.role === 'coach' && (<div className="mt-2 pt-2 border-t border-gray-100"><label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1"><Icon name="lock" size={10}/> Nota Privada</label><textarea defaultValue={app.coachNotes || ''} onBlur={(e) => handleSaveCoachNote(app.id, e.target.value)} className="w-full text-xs border rounded p-1 mt-1 bg-yellow-50 focus:bg-white transition" placeholder="Solo visible para ti..." rows="1"/></div>)}
+                                                        {app.coachMessage ? (
+                                                            <div className="mt-2 pt-2 border-t border-gray-200"><span className="block text-xs font-bold text-purple-600 uppercase">Mensaje del Coach:</span><p className="text-gray-800 font-medium">"{app.coachMessage}"</p></div>
+                                                        ) : (
+                                                            profile.role === 'coach' && app.status !== 'Cancelado' && app.status !== 'Rechazado' && app.status !== 'Asistido' && app.status !== 'Reprogramado' && (
+                                                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                    <span className="block text-xs font-bold text-gray-400 uppercase mb-1">Responder / Enviar Mensaje:</span>
+                                                                    <form onSubmit={(e) => { e.preventDefault(); handleSendCoachMessage(app.id, e.target.response.value); }} className="flex gap-2"><input type="text" name="response" className="flex-1 text-xs border rounded px-2 py-1" placeholder="Escribe aquí..." /><button type="submit" className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"><Icon name="send" size={12}/></button></form>
+                                                                </div>
+                                                            )
+                                                        )}
+                                                        {profile.role === 'coach' && (<div className="mt-2 pt-2 border-t border-gray-100"><label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1"><Icon name="lock" size={10}/> Nota Privada</label><textarea defaultValue={app.coachNotes || ''} onBlur={(e) => handleSaveCoachNote(app.id, e.target.value)} className="w-full text-xs border rounded p-1 mt-1 bg-yellow-50 focus:bg-white transition" placeholder="Solo visible para ti..." rows="1"/></div>)}
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="flex flex-row sm:flex-col gap-2 justify-center border-t sm:border-t-0 sm:border-l border-gray-100 pt-4 sm:pt-0 sm:pl-4">
+                                                {/* Boton Google Calendar */}
                                                 <button onClick={() => addToGoogleCalendar(app)} className="flex items-center justify-center gap-1 px-3 py-2 text-gray-500 border border-gray-200 rounded text-sm hover:bg-blue-50 w-full sm:w-auto mb-2" title="Agregar a Google Calendar"><Icon name="calendar-plus" size={16}/> <span className="sm:hidden">Agendar</span></button>
-                                                {profile?.role === 'coach' && (app.status === 'Confirmado' || app.status === 'Asistido') && app.paymentStatus !== 'paid' && (<button onClick={() => { setCurrentPayApp(app); setShowPaymentModal(true); }} className="flex items-center justify-center gap-1 px-3 py-2 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-sm hover:bg-emerald-200 w-full sm:w-auto mb-2" title="Registrar Pago"><Icon name="dollar-sign" size={16}/> <span className="sm:hidden">Cobrar</span></button>)}
-                                                {profile?.role === 'coach' && app.status === 'Pendiente' && (<><button onClick={() => handleStatusChangeWithPayment(app, 'Confirmado')} className="flex items-center justify-center gap-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 w-full sm:w-auto">Confirmar</button><button onClick={() => handleStatusChange(app.id, 'Rechazado')} className="flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto">Rechazar</button></>)}
-                                                {profile?.role === 'coach' && app.status === 'Confirmado' && (<button onClick={() => handleStatusChange(app.id, 'Asistido')} className="flex items-center justify-center gap-1 px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 w-full sm:w-auto">Asistido</button>)}
-                                                {(app.status === 'Pendiente' || app.status === 'Confirmado') && (<button onClick={() => handleCancel(app, profile?.role)} className="flex items-center justify-center gap-1 px-3 py-2 text-red-500 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto" title="Cancelar Turno"><span className="sm:hidden text-xs font-bold">CANCELAR</span><Icon name="ban" size={16}/></button>)}
-                                                {profile?.role === 'coach' && (app.status === 'Confirmado' || app.status === 'Pendiente') && (<button onClick={() => { setRescheduleTarget(app); setShowRescheduleModal(true); }} className="flex items-center justify-center gap-1 px-3 py-2 text-blue-500 border border-blue-200 rounded text-sm hover:bg-blue-50 w-full sm:w-auto" title="Reprogramar Turno"><span className="sm:hidden text-xs font-bold">REPROG.</span><Icon name="refresh-cw" size={16}/></button>)}
-                                                {profile?.role === 'coach' && (<button onClick={() => handleDelete(app.id)} className="flex items-center justify-center gap-1 px-3 py-2 text-gray-400 hover:text-red-600 hover:bg-gray-100 rounded text-sm transition" title="Borrar Definitivamente"><Icon name="trash" size={16}/></button>)}
+
+                                                {/* Boton Pago Coach */}
+                                                {profile.role === 'coach' && (app.status === 'Confirmado' || app.status === 'Asistido') && app.paymentStatus !== 'paid' && (
+                                                    <button onClick={() => { setCurrentPayApp(app); setShowPaymentModal(true); }} className="flex items-center justify-center gap-1 px-3 py-2 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-sm hover:bg-emerald-200 w-full sm:w-auto mb-2" title="Registrar Pago"><Icon name="dollar-sign" size={16}/> <span className="sm:hidden">Cobrar</span></button>
+                                                )}
+
+                                                {/* Botones de Estado Coach */}
+                                                {profile.role === 'coach' && app.status === 'Pendiente' && (<><button onClick={() => handleStatusChangeWithPayment(app, 'Confirmado')} className="flex items-center justify-center gap-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 w-full sm:w-auto">Confirmar</button><button onClick={() => handleStatusChange(app.id, 'Rechazado')} className="flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto">Rechazar</button></>)}
+                                                {profile.role === 'coach' && app.status === 'Confirmado' && (<button onClick={() => handleStatusChange(app.id, 'Asistido')} className="flex items-center justify-center gap-1 px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 w-full sm:w-auto">Asistido</button>)}
+                                                
+                                                {/* Boton Cancelar */}
+                                                {(app.status === 'Pendiente' || app.status === 'Confirmado') && (
+                                                    <button onClick={() => handleCancel(app, profile.role)} className="flex items-center justify-center gap-1 px-3 py-2 text-red-500 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto" title="Cancelar Turno"><span className="sm:hidden text-xs font-bold">CANCELAR</span><Icon name="ban" size={16}/></button>
+                                                )}
+
+                                                {/* Boton Reprogramar (Coach Only) */}
+                                                {profile.role === 'coach' && (app.status === 'Confirmado' || app.status === 'Pendiente') && (
+                                                    <button onClick={() => { setRescheduleTarget(app); setShowRescheduleModal(true); }} className="flex items-center justify-center gap-1 px-3 py-2 text-blue-500 border border-blue-200 rounded text-sm hover:bg-blue-50 w-full sm:w-auto" title="Reprogramar Turno"><span className="sm:hidden text-xs font-bold">REPROG.</span><Icon name="refresh-cw" size={16}/></button>
+                                                )}
+                                                
+                                                {/* Boton Eliminar (Coach Only) */}
+                                                {profile.role === 'coach' && (
+                                                    <button onClick={() => handleDelete(app.id)} className="flex items-center justify-center gap-1 px-3 py-2 text-gray-400 hover:text-red-600 hover:bg-gray-100 rounded text-sm transition" title="Borrar Definitivamente"><Icon name="trash" size={16}/></button>
+                                                )}
                                             </div>
                                         </div>
                                     ))
