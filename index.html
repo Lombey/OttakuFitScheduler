@@ -41,84 +41,75 @@
     <script type="text/babel">
         // --- Helpers para Fechas y Horas (Globales) ---
         const getTodayString = () => {
-            const d = new Date();
-            const offset = d.getTimezoneOffset();
-            const local = new Date(d.getTime() - (offset*60*1000));
-            return local.toISOString().split('T')[0];
+            // Obtiene la fecha local en formato YYYY-MM-DD de forma robusta
+            const date = new Date();
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
         };
         
         const getMinTime = () => {
             const now = new Date();
-            let currentMinutes = now.getMinutes();
-            let nextMinutes = Math.ceil(currentMinutes / 15) * 15;
-            let nextHour = now.getHours();
-
-            if (nextMinutes >= 60) {
-                nextMinutes = 0;
-                nextHour += 1;
-            }
-            if (nextHour > 21 || (nextHour === 21 && nextMinutes > 45)) {
-                return null; 
-            }
-            return `${String(nextHour).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+            // Como los turnos son en punto, si son las 13:01, el próximo turno válido es a las 14:00
+            const nextHour = now.getHours() + 1;
+            return `${String(nextHour).padStart(2, '0')}:00`;
         };
         
-        const generateTimeSlots = () => {
+        // GENERADOR DE HORARIOS INTELIGENTE SEGÚN DÍA
+        const getSlotsForDate = (dateString) => {
+            // Crear fecha a mediodía para evitar problemas de timezone
+            const date = new Date(dateString + 'T12:00:00');
+            const dayOfWeek = date.getDay(); // 0 = Domingo, 6 = Sábado
+
+            // Domingo: Cerrado
+            if (dayOfWeek === 0) return [];
+
+            let startHour, endHour;
+
+            if (dayOfWeek === 6) {
+                // Sábado: 13:00 a 16:00
+                startHour = 13;
+                endHour = 16;
+            } else {
+                // Lunes a Viernes: 12:00 a 21:00
+                startHour = 12;
+                endHour = 21;
+            }
+
             const slots = [];
-            for (let h = 7; h <= 21; h++) {
-                for (let m = 0; m < 60; m += 15) {
-                    if (h === 21 && m > 45) break;
-                    const hour = String(h).padStart(2, '0');
-                    const minute = String(m).padStart(2, '0');
-                    slots.push(`${hour}:${minute}`);
-                }
+            // Loop de hora en hora (en punto)
+            for (let h = startHour; h <= endHour; h++) {
+                // Sábado cierra 16:00 (asumimos ultimo turno 16:00)
+                if (dayOfWeek === 6 && h > 16) break;
+                // Semana cierra 21:00
+                if (dayOfWeek !== 6 && h > 21) break;
+
+                const hour = String(h).padStart(2, '0') + ":00";
+                slots.push(hour);
             }
             return slots;
         };
-        const timeSlots = generateTimeSlots();
 
         const getAvailableTimeSlots = (selectedDate, appointments = []) => {
             const today = getTodayString();
             const minTime = getMinTime();
             
             // 1. Obtener slots base según el día
-            const date = new Date(selectedDate + 'T12:00:00');
-            const dayOfWeek = date.getDay();
+            let available = getSlotsForDate(selectedDate);
 
-            if (dayOfWeek === 0) return []; // Domingo cerrado
+            if (available.length === 0) return [];
 
-            let startHour = 12; 
-            let endHour = 21;   
-
-            if (dayOfWeek === 6) { // Sabado
-                startHour = 13;
-                endHour = 16;
-            }
-
-            const dailySlots = [];
-            // Loop de hora en hora (en punto)
-            for (let h = startHour; h <= endHour; h++) {
-                const hourStr = String(h).padStart(2, '0') + ":00";
-                
-                // Reglas de cierre exacto
-                // Sábado cierra 16:00 (último turno 15:00 si duran 1h, o 16:00 si termina 17:00. Asumimos hasta 16:00 inclusive como inicio)
-                // Ajustemos a 16:00 como ultima hora de inicio posible si cierra a las 17:00, o 15:00 si cierra a las 16:00.
-                // El requerimiento fue "sabado de 13 a 16". Asumiremos 16:00 como limite.
-                
-                dailySlots.push(hourStr);
-            }
-
-            // 2. Identificar horarios ocupados
+            // 2. Identificar horarios ocupados (que no estén cancelados/rechazados)
             const busyTimes = appointments
                 .filter(app => app.date === selectedDate && app.status !== 'Rechazado' && app.status !== 'Cancelado')
                 .map(app => app.time);
 
-            // 3. Filtrar ocupados
-            let available = dailySlots.filter(slot => !busyTimes.includes(slot));
+            // 3. Filtrar ocupados de la lista
+            available = available.filter(slot => !busyTimes.includes(slot));
 
-            // 4. Filtrar pasado si es hoy
-            if (selectedDate === today && minTime) {
-                // Filtrar horas pasadas (comparación de strings funciona bien con formato HH:MM)
+            // 4. Filtrar horas pasadas si la fecha seleccionada es HOY
+            if (selectedDate === today) {
                 available = available.filter(slot => slot >= minTime);
             }
             
@@ -141,10 +132,6 @@
         // Inicializar solo si no existe
         if (!firebase.apps.length) { 
             firebase.initializeApp(firebaseConfig); 
-        } else {
-            // Si ya existe (por el entorno de preview), intentamos usar esa instancia pero
-            // en este caso específico, para solucionar tu error, confiamos en que las credenciales
-            // arriba son las que mandan.
         }
 
         const auth = firebase.auth();
@@ -220,7 +207,6 @@
 
             useEffect(() => {
                 const initAuth = async () => {
-                    // Forzar signInAnonymously para asegurar conexión a TU proyecto si no hay usuario
                     if (!auth.currentUser) {
                         await auth.signInAnonymously();
                     }
@@ -323,10 +309,7 @@
                 try { await getUsersCollection().doc(profile.email).update(updatedProfile); setProfile(updatedProfile); setView('dashboard'); } catch (error) { console.error(error); }
             };
 
-            const handleLogout = async () => { 
-                // Soft logout (no sign out firebase to keep anon auth for next login attempt to same DB)
-                setProfile(null); setFilterDate(getTodayString()); setView('login'); setShowCoachAvailability(false); 
-            };
+            const handleLogout = async () => { try { await auth.signOut(); } catch(e){} setProfile(null); setFilterDate(getTodayString()); setView('login'); setShowCoachAvailability(false); };
 
             const handleBook = async (e) => {
                 e.preventDefault();
