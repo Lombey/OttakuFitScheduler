@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OttakuFitScheduler - Gestión de Turnos</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDKs (Compat version for direct HTML usage) -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons (Lucide) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .fade-in { animation: fadeIn 0.4s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Ocultar scrollbar en filtros moviles */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- Helpers para Fechas y Horas (Globales) ---
+        const getTodayString = () => {
+            const d = new Date();
+            const offset = d.getTimezoneOffset();
+            const local = new Date(d.getTime() - (offset*60*1000));
+            return local.toISOString().split('T')[0];
+        };
+        
+        const getMinTime = () => {
+            const now = new Date();
+            let currentMinutes = now.getMinutes();
+            let nextMinutes = Math.ceil(currentMinutes / 15) * 15;
+            let nextHour = now.getHours();
+
+            if (nextMinutes >= 60) {
+                nextMinutes = 0;
+                nextHour += 1;
+            }
+            if (nextHour > 21 || (nextHour === 21 && nextMinutes > 45)) {
+                return null; 
+            }
+            return `${String(nextHour).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+        };
+        
+        const generateTimeSlots = () => {
+            const slots = [];
+            for (let h = 7; h <= 21; h++) {
+                for (let m = 0; m < 60; m += 15) {
+                    if (h === 21 && m > 45) break;
+                    const hour = String(h).padStart(2, '0');
+                    const minute = String(m).padStart(2, '0');
+                    slots.push(`${hour}:${minute}`);
+                }
+            }
+            return slots;
+        };
+        const timeSlots = generateTimeSlots();
+
+        const getAvailableTimeSlots = (selectedDate, appointments = []) => {
+            const today = getTodayString();
+            const minTime = getMinTime();
+            
+            // 1. Obtener slots base según el día
+            const date = new Date(selectedDate + 'T12:00:00');
+            const dayOfWeek = date.getDay();
+
+            if (dayOfWeek === 0) return []; // Domingo cerrado
+
+            let startHour = 12; 
+            let endHour = 21;   
+
+            if (dayOfWeek === 6) { // Sabado
+                startHour = 13;
+                endHour = 16;
+            }
+
+            const dailySlots = [];
+            // Loop de hora en hora (en punto)
+            for (let h = startHour; h <= endHour; h++) {
+                const hourStr = String(h).padStart(2, '0') + ":00";
+                
+                // Reglas de cierre exacto
+                if (dayOfWeek === 6 && h === 16) break; 
+                if (dayOfWeek !== 6 && h === 21) break;
+                
+                dailySlots.push(hourStr);
+            }
+
+            // 2. Identificar horarios ocupados
+            const busyTimes = appointments
+                .filter(app => app.date === selectedDate && app.status !== 'Rechazado' && app.status !== 'Cancelado')
+                .map(app => app.time);
+
+            // 3. Filtrar ocupados
+            let available = dailySlots.filter(slot => !busyTimes.includes(slot));
+
+            // 4. Filtrar pasado si es hoy
+            if (selectedDate === today && minTime) {
+                // Filtrar horas pasadas (comparación de strings funciona bien con formato HH:MM)
+                available = available.filter(slot => slot >= minTime);
+            }
+            
+            return available;
+        };
+
+        // --- Firebase Configuration (FORZADO A TU PROYECTO) ---
+        // Usamos directamente tus credenciales, ignorando el entorno de prueba para evitar conflictos de autenticación
+        const firebaseConfig = {
+            apiKey: "AIzaSyBa_YrZXpzrsLqHpLZP22DkFJ4M80epuyw",
+            authDomain: "ottakufit-scheduler.firebaseapp.com",
+            projectId: "ottakufit-scheduler",
+            storageBucket: "ottakufit-scheduler.firebasestorage.app",
+            messagingSenderId: "382792722952",
+            appId: "1:382792722952:web:183878320850e456bcbfbd",
+            measurementId: "G-WK7JE75H96"
+        };
+        
+        const appId = 'ottaku-production-v1'; // ID fijo para tu base de datos
+
+        // Inicialización
+        if (!firebase.apps.length) { 
+            firebase.initializeApp(firebaseConfig); 
+        } else {
+            // Si ya existe una instancia (raro en prod, común en dev), la usamos pero advertimos
+            // En un entorno real de hosting, esto cargará tu config siempre.
+        }
+
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        
+        const getAppointmentsCollection = () => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('appointments');
+        const getUsersCollection = () => db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users');
+
+        const { useState, useEffect } = React;
+
+        // --- Components ---
+        const Icon = ({ name, size = 20, className = "", onClick = null }) => {
+            const icons = {
+                'calendar': <rect width="18" height="18" x="3" y="4" rx="2" ry="2"/>,
+                'user': <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
+                'map-pin': <><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>,
+                'phone': <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>,
+                'check-circle': <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
+                'x-circle': <><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></>,
+                'clock': <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+                'log-out': <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></>,
+                'edit': <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>,
+                'lock': <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>,
+                'trash': <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
+                'filter': <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>,
+                'copy': <><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></>,
+                'user-check': <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></>,
+                'eye': <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+                'eye-off': <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a1.8 1.8 0 0 1-.3-1"/><path d="M22 12s-3 7-10 7a10.07 10.07 0 0 1-5.94-2.06"/><line x1="2" x2="22" y1="2" y2="22"/><circle cx="12" cy="12" r="3"/><path d="M6 6l-3-3"/></>,
+                'send': <><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
+                'mail': <><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>,
+                'ban': <><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></>,
+                'search': <><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></>,
+                'download': <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></>,
+                'calendar-plus': <><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M10 16h4"/><path d="M12 14v4"/></>,
+                'dollar-sign': <><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>,
+                'user-plus': <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" x2="20" y1="8" y2="14"/><line x1="23" x2="17" y1="11" y2="11"/></>,
+                'settings': <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></>,
+                'map': <><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" x2="9" y1="3" y2="18"/><line x1="15" x2="15" y1="6" y2="21"/></>,
+                'tag': <><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><circle cx="7" cy="7" r="2"/></>
+            };
+            return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} onClick={onClick}>{icons[name]}</svg>;
+        };
+
+        // Nuevo componente para input de Dirección con verificación
+        const AddressInput = ({ name, defaultValue, placeholder }) => {
+            const [val, setVal] = useState(defaultValue || '');
+            
+            const handleVerify = () => {
+                if (!val.trim()) return alert("Por favor, escribe una dirección primero.");
+                const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(val)}`;
+                window.open(url, '_blank');
+            };
+
+            return (
+                <div className="relative mt-1">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icon name="map-pin" size={16}/></div>
+                    <input 
+                        required 
+                        type="text" 
+                        name={name} 
+                        className="pl-10 pr-10 block w-full border-gray-300 rounded-md border p-2 focus:ring-blue-500 focus:border-blue-500 text-sm" 
+                        placeholder={placeholder} 
+                        value={val}
+                        onChange={(e) => setVal(e.target.value)}
+                    />
+                    <button 
+                        type="button" 
+                        onClick={handleVerify} 
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-blue-600 hover:text-blue-800 transition" 
+                        title="Probar en Google Maps"
+                    >
+                        <Icon name="map" size={16}/>
+                    </button>
+                </div>
+            );
+        };
+
+        const PasswordInput = ({ name, placeholder, value, onChange }) => {
+            const [show, setShow] = useState(false);
+            return (
+                <div className="relative mt-1">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icon name="lock" size={16}/></div>
+                    <input required type={show ? "text" : "password"} name={name} className="pl-10 block w-full border-gray-300 rounded-md border p-2 focus:ring-blue-500 focus:border-blue-500" placeholder={placeholder} value={value} onChange={onChange}/>
+                    <button type="button" onClick={(e) => {e.preventDefault(); setShow(!show);}} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition" title={show ? "Ocultar" : "Mostrar"}><Icon name={show ? "eye-off" : "eye"} size={16}/></button>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [profile, setProfile] = useState(null);
+            const [view, setView] = useState('login');
+            const [appointments, setAppointments] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [isLoginLoading, setIsLoginLoading] = useState(false);
+            const [students, setStudents] = useState([]);
+            
+            // Filtros
+            const [filterDate, setFilterDate] = useState(getTodayString());
+            const [studentFilter, setStudentFilter] = useState('Todos');
+            
+            // Estados UI
+            const [selectedBookDate, setSelectedBookDate] = useState(getTodayString());
+            const [recoveryEmail, setRecoveryEmail] = useState('');
+            
+            // Coach States
+            const [showCoachAvailability, setShowCoachAvailability] = useState(false);
+            const [availabilityDate, setAvailabilityDate] = useState(getTodayString());
+            const [showExportModal, setShowExportModal] = useState(false);
+            const [showCoachBookingModal, setShowCoachBookingModal] = useState(false);
+            const [exportStart, setExportStart] = useState(getTodayString());
+            const [exportEnd, setExportEnd] = useState(getTodayString());
+            
+            // Price Config & Payment States
+            const [showPriceConfig, setShowPriceConfig] = useState(false);
+            const [showPaymentModal, setShowPaymentModal] = useState(false);
+            const [currentPayApp, setCurrentPayApp] = useState(null);
+            const [planPrices, setPlanPrices] = useState({ basic: 0, plus: 0, pro: 0 });
+
+            useEffect(() => {
+                const initAuth = async () => {
+                    // MODIFICADO: Intentar autenticación anónima directa si no hay usuario,
+                    // ignorando el token inicial para forzar el uso del proyecto correcto.
+                    if (!auth.currentUser) {
+                        await auth.signInAnonymously();
+                    }
+                };
+                initAuth();
+                const unsubscribe = auth.onAuthStateChanged((u) => { setUser(u); setLoading(false); });
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (loading || isLoginLoading) return;
+                if (!profile) { 
+                    if (view !== 'register' && view !== 'recover-password') setView('login'); 
+                }
+                else if (profile.role === 'student' && (!profile.address || !profile.phone)) { setView('complete-profile'); }
+                else { if (view === 'login' || view === 'register' || view === 'recover-password') setView('dashboard'); }
+            }, [user, profile, loading, isLoginLoading]);
+
+            // Fetch Data
+            useEffect(() => {
+                if (!user) return;
+                const unsubscribeDb = getAppointmentsCollection().onSnapshot((snapshot) => {
+                    const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    apps.sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+                    setAppointments(apps);
+                }, (error) => console.error("Error leyendo turnos:", error));
+                
+                // If Coach, load settings and students
+                if (profile && profile.role === 'coach') {
+                    getUsersCollection().get().then(snapshot => {
+                        const st = snapshot.docs.map(doc => doc.data()).filter(u => u.role === 'student');
+                        setStudents(st);
+                        // Load coach settings (assuming stored in coach's user doc)
+                        const coachDoc = snapshot.docs.find(doc => doc.id === profile.email);
+                        if (coachDoc && coachDoc.data().planPrices) {
+                            setPlanPrices(coachDoc.data().planPrices);
+                        }
+                    });
+                }
+
+                return () => unsubscribeDb();
+            }, [user, profile]);
+
+            const fetchUserProfile = async (email, role) => {
+                const userDocRef = getUsersCollection().doc(email);
+                const userDoc = await userDocRef.get();
+                if (userDoc.exists) {
+                    const data = userDoc.data();
+                    if (data.role !== role) await userDocRef.update({ role });
+                    return data;
+                } else {
+                    const name = email.split('@')[0];
+                    const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+                    const newUser = { email, role, name: capitalizedName, createdAt: new Date().toISOString() };
+                    await userDocRef.set(newUser);
+                    return newUser;
+                }
+            };
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                setIsLoginLoading(true);
+                const formData = new FormData(e.target);
+                const email = formData.get('email').toLowerCase().trim();
+                const password = formData.get('password');
+                const isCoach = email === 'gastonparrado@me.com';
+                const requiredPassword = isCoach ? '1234' : '123';
+                const role = isCoach ? 'coach' : 'student';
+
+                if (password !== requiredPassword) {
+                    alert("Contraseña incorrecta.");
+                    setIsLoginLoading(false);
+                    return;
+                }
+                try {
+                    if (!auth.currentUser) await auth.signInAnonymously();
+                    const userProfile = await fetchUserProfile(email, role);
+                    setProfile(userProfile);
+                } catch (error) { console.error(error); alert("Error al conectar: " + error.message); } 
+                finally { setIsLoginLoading(false); }
+            };
+
+            const handleRegister = async (e) => {
+                e.preventDefault();
+                setIsLoginLoading(true);
+                const formData = new FormData(e.target);
+                const email = formData.get('email').toLowerCase().trim();
+                const password = formData.get('password');
+                const confirmPassword = formData.get('confirmPassword');
+                const name = formData.get('name');
+                const address = formData.get('address');
+                const phone = formData.get('phone');
+
+                if (password !== confirmPassword) { alert("Las contraseñas no coinciden."); setIsLoginLoading(false); return; }
+                if (email === 'gastonparrado@me.com') { alert("Email reservado."); setIsLoginLoading(false); return; }
+
+                try {
+                    const userDocRef = getUsersCollection().doc(email);
+                    const userDoc = await userDocRef.get();
+                    if (userDoc.exists) { alert("Email ya registrado."); setView('login'); return; }
+                    
+                    const newUserProfile = { email, role: 'student', name, address, phone, createdAt: new Date().toISOString() };
+                    if (!user) await auth.signInAnonymously();
+                    await userDocRef.set(newUserProfile);
+                    setProfile(newUserProfile);
+                    setView('dashboard');
+                } catch (error) { console.error(error); alert("Error al registrar."); } 
+                finally { setIsLoginLoading(false); }
+            };
+
+            const handleUpdateProfile = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const updatedProfile = { ...profile, name: formData.get('name'), address: formData.get('address'), phone: formData.get('phone') };
+                try { await getUsersCollection().doc(profile.email).update(updatedProfile); setProfile(updatedProfile); setView('dashboard'); } catch (error) { console.error(error); }
+            };
+
+            const handleLogout = async () => { try { await auth.signOut(); } catch(e){} setProfile(null); setFilterDate(getTodayString()); setView('login'); setShowCoachAvailability(false); };
+
+            const handleBook = async (e) => {
+                e.preventDefault();
+                if (!user || !profile) return;
+                const formData = new FormData(e.target);
+                const date = formData.get('date');
+                const time = formData.get('time');
+                const message = formData.get('message'); 
+
+                const now = new Date();
+                const selectedDateTime = new Date(`${date}T${time}:00`);
+                if (selectedDateTime <= now) { alert("La fecha/hora debe ser futura."); return; }
+                
+                try {
+                    await getAppointmentsCollection().add({
+                        studentName: profile.name,
+                        studentAddress: profile.address,
+                        studentPhone: profile.phone,
+                        studentEmail: profile.email,
+                        studentId: user.uid,
+                        date, time, 
+                        message: message || "",
+                        coachMessage: "", 
+                        status: 'Pendiente',
+                        paymentStatus: 'none', 
+                        paymentAmount: '',
+                        paymentPlan: '',
+                        createdAt: new Date().toISOString()
+                    });
+                    e.target.reset();
+                    setSelectedBookDate(getTodayString());
+                    alert("¡Turno solicitado!");
+                } catch (error) { console.error(error); alert("Error al agendar."); }
+            };
+
+            const handleCoachBook = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const studentEmail = formData.get('studentEmail');
+                const date = formData.get('date');
+                const time = formData.get('time');
+                const message = formData.get('message');
+
+                const targetStudent = students.find(s => s.email === studentEmail);
+                if (!targetStudent) { alert("Error encontrando al alumno."); return; }
+
+                const now = new Date();
+                const selectedDateTime = new Date(`${date}T${time}:00`);
+                if (selectedDateTime <= now) { alert("La fecha/hora debe ser futura."); return; }
+
+                try {
+                    await getAppointmentsCollection().add({
+                        studentName: targetStudent.name,
+                        studentAddress: targetStudent.address,
+                        studentPhone: targetStudent.phone,
+                        studentEmail: targetStudent.email,
+                        studentId: '', 
+                        date, time,
+                        message: "", 
+                        coachMessage: message || "", 
+                        coachNotes: "",
+                        status: 'Confirmado', 
+                        paymentStatus: 'pending', 
+                        paymentAmount: '',
+                        paymentPlan: '',
+                        createdAt: new Date().toISOString()
+                    });
+                    setShowCoachBookingModal(false);
+                    alert("¡Turno agendado y confirmado!");
+                } catch (error) { console.error(error); alert("Error al agendar."); }
+            };
+
+            const handleStatusChangeWithPayment = async (app, newStatus) => {
+                try {
+                    const updates = { status: newStatus };
+                    if (newStatus === 'Confirmado' && (!app.paymentStatus || app.paymentStatus === 'none')) {
+                        updates.paymentStatus = 'pending';
+                    }
+                    await getAppointmentsCollection().doc(app.id).update(updates);
+                } catch (error) { console.error(error); }
+            };
+            
+            const handleStatusChange = async (docId, newStatus) => {
+                try { await getAppointmentsCollection().doc(docId).update({ status: newStatus }); } catch (error) { console.error(error); }
+            };
+
+            const handleCancel = async (app, role) => {
+                const reason = prompt("Por favor, ingresa el motivo de la cancelación:");
+                if (reason === null) return;
+
+                const updateData = { status: 'Cancelado' };
+                if (role === 'student') {
+                    updateData.message = app.message ? `${app.message} \n[CANCELADO]: ${reason}` : `[CANCELADO]: ${reason}`;
+                } else {
+                    updateData.coachMessage = app.coachMessage ? `${app.coachMessage} \n[CANCELADO]: ${reason}` : `[CANCELADO]: ${reason}`;
+                }
+
+                try {
+                    await getAppointmentsCollection().doc(app.id).update(updateData);
+                    alert("Turno cancelado correctamente.");
+                } catch (error) { console.error(error); alert("Error al cancelar el turno."); }
+            };
+
+            const handleSaveCoachNote = async (docId, note) => {
+                try {
+                    await getAppointmentsCollection().doc(docId).update({ coachNotes: note });
+                } catch (error) { console.error(error); alert("Error al guardar nota."); }
+            };
+
+            // --- NEW PAYMENT HANDLERS ---
+            const handleSavePrices = async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const newPrices = {
+                    basic: formData.get('basic'),
+                    plus: formData.get('plus'),
+                    pro: formData.get('pro')
+                };
+                try {
+                    await getUsersCollection().doc(profile.email).update({ planPrices: newPrices });
+                    setPlanPrices(newPrices);
+                    setShowPriceConfig(false);
+                    alert("Precios actualizados.");
+                } catch (error) { console.error(error); alert("Error al guardar precios."); }
+            };
+
+            const handleSelectPlanPayment = async (planName, amount) => {
+                if (!currentPayApp) return;
+                
+                let planLabel = '';
+                if (planName === 'Manual') {
+                    planLabel = 'Plan Hibrido';
+                } else {
+                    planLabel = `Plan ${planName}`;
+                }
+
+                try {
+                    await getAppointmentsCollection().doc(currentPayApp.id).update({
+                        paymentStatus: 'paid',
+                        paymentAmount: amount,
+                        paymentPlan: planLabel
+                    });
+                    setShowPaymentModal(false);
+                    setCurrentPayApp(null);
+                    alert("Pago registrado.");
+                } catch (error) { console.error(error); alert("Error al registrar pago."); }
+            };
+
+            const handleSendCoachMessage = async (docId, msg) => {
+                if (!msg.trim()) return;
+                try {
+                    await getAppointmentsCollection().doc(docId).update({ coachMessage: msg });
+                    alert("Mensaje enviado/guardado.");
+                } catch (error) { console.error(error); alert("Error al enviar mensaje."); }
+            };
+
+            const copyToClipboard = (text) => {
+                try {
+                    const ta = document.createElement("textarea");
+                    ta.value = text;
+                    ta.style.position="fixed"; ta.style.left="-9999px";
+                    document.body.appendChild(ta); ta.focus(); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta);
+                    alert("Copiado!");
+                } catch (e) { alert("Copia manual requerida."); }
+            };
+
+            // --- EXPORT FUNCTION ---
+            const handleExportCSV = () => {
+                const filtered = appointments.filter(app => {
+                    return app.date >= exportStart && app.date <= exportEnd;
+                });
+                if (filtered.length === 0) { alert("No hay turnos para exportar en este rango."); return; }
+
+                let csvContent = "data:text/csv;charset=utf-8,";
+                csvContent += "Fecha,Hora,Alumno,Email,Telefono,Direccion,Estado,Pago,Monto,Plan,Nota Alumno,Respuesta Coach,Observaciones Privadas\n";
+
+                filtered.forEach(row => {
+                    const cleanStr = (str) => `"${(str || '').replace(/"/g, '""')}"`; 
+                    const paymentLabel = row.paymentStatus === 'paid' ? 'Abonado' : (row.paymentStatus === 'pending' ? 'Pendiente Pago' : '-');
+                    
+                    csvContent += [
+                        row.date, 
+                        row.time, 
+                        cleanStr(row.studentName), 
+                        cleanStr(row.studentEmail), 
+                        cleanStr(row.studentPhone), 
+                        cleanStr(row.studentAddress), 
+                        row.status, 
+                        paymentLabel,
+                        row.paymentAmount || '',
+                        cleanStr(row.paymentPlan),
+                        cleanStr(row.message), 
+                        cleanStr(row.coachMessage),
+                        cleanStr(row.coachNotes)
+                    ].join(",") + "\n";
+                });
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `reporte_turnos_${exportStart}_${exportEnd}.csv`);
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                setShowExportModal(false);
+            };
+
+            // --- GOOGLE CALENDAR LINK ---
+            const addToGoogleCalendar = (app) => {
+                const sDate = app.date.replace(/-/g, '');
+                const sTime = app.time.replace(':', '') + '00';
+                const start = `${sDate}T${sTime}`;
+                let [h, m] = app.time.split(':').map(Number);
+                let endH = h + 1;
+                const eTime = String(endH).padStart(2, '0') + String(m).padStart(2, '0') + '00';
+                const end = `${sDate}T${eTime}`;
+                const title = encodeURIComponent("Entrenamiento OttakuFit");
+                const details = encodeURIComponent(`Alumno: ${app.studentName}\nTel: ${app.studentPhone}\nEstado: ${app.status}`);
+                const location = encodeURIComponent(app.studentAddress);
+                const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+                window.open(url, '_blank');
+            };
+
+            // --- Coach Availability View ---
+            const CoachAvailabilityView = () => {
+                const freeSlots = getAvailableTimeSlots(availabilityDate, appointments);
+                const slotsText = `Horarios disponibles para el ${availabilityDate}:\n` + freeSlots.join(', ');
+
+                return (
+                    <div className="bg-white rounded-xl shadow-md p-6 sticky top-8 fade-in border border-indigo-100">
+                         <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                                <Icon name="clock" className="text-indigo-600"/> Disponibilidad
+                            </h2>
+                            <button onClick={() => setShowCoachAvailability(false)} className="text-gray-400 hover:text-gray-600"><Icon name="x-circle"/></button>
+                        </div>
+                        
+                        <div className="mb-4">
+                            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Seleccionar Fecha</label>
+                            <input 
+                                type="date" 
+                                className="w-full border-gray-300 rounded-md border p-2 text-sm" 
+                                value={availabilityDate} 
+                                onChange={(e) => setAvailabilityDate(e.target.value)}
+                                min={getTodayString()}
+                            />
+                        </div>
+
+                        <div className="mb-4">
+                            <div className="text-xs font-bold text-gray-500 uppercase mb-2">Horarios Libres ({freeSlots.length})</div>
+                            {freeSlots.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {freeSlots.map(slot => (
+                                        <span key={slot} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium border border-green-200">
+                                            {slot}
+                                        </span>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-red-500 italic">No hay horarios disponibles.</p>
+                            )}
+                        </div>
+
+                        {freeSlots.length > 0 && (
+                            <button 
+                                onClick={() => copyToClipboard(slotsText)} 
+                                className="w-full py-2 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700 flex items-center justify-center gap-2"
+                            >
+                                <Icon name="copy" size={16}/> Copiar Disponibilidad
+                            </button>
+                        )}
+                    </div>
+                );
+            };
+            
+            // --- Coach Booking Modal ---
+            const CoachBookingModal = () => {
+                const [modalDate, setModalDate] = useState(getTodayString());
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
+                        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                            <div className="bg-indigo-600 p-4 text-white flex justify-between items-center">
+                                <h3 className="font-bold text-lg flex items-center gap-2"><Icon name="calendar-plus" size={20}/> Agendar Clase</h3>
+                                <button onClick={() => setShowCoachBookingModal(false)}><Icon name="x-circle"/></button>
+                            </div>
+                            <form onSubmit={handleCoachBook} className="p-6 space-y-4">
+                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Alumno</label><select required name="studentEmail" className="w-full border p-2 rounded text-sm"><option value="">Seleccionar Alumno</option>{students.map(s => (<option key={s.email} value={s.email}>{s.name} ({s.email})</option>))}</select></div>
+                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha</label><input required type="date" name="date" className="w-full border p-2 rounded text-sm" value={modalDate} min={getTodayString()} onChange={(e) => setModalDate(e.target.value)}/></div>
+                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Hora</label><select required name="time" className="w-full border p-2 rounded text-sm"><option value="">Seleccionar Hora</option>{getAvailableTimeSlots(modalDate, appointments).map(slot => (<option key={slot} value={slot}>{slot}</option>))}</select></div>
+                                <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Mensaje (Opcional)</label><textarea name="message" className="w-full border p-2 rounded text-sm" rows="2" placeholder="Nota para el alumno..."></textarea></div>
+                                <button type="submit" className="w-full py-2 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700">Confirmar Turno</button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- Price Config Modal ---
+            const PriceConfigModal = () => (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                        <div className="bg-gray-800 p-4 text-white flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Configurar Precios</h3>
+                            <button onClick={() => setShowPriceConfig(false)}><Icon name="x-circle"/></button>
+                        </div>
+                        <form onSubmit={handleSavePrices} className="p-6 space-y-4">
+                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Plan Básico</label><input type="number" name="basic" defaultValue={planPrices.basic} className="w-full border p-2 rounded" placeholder="$" /></div>
+                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Plan Plus</label><input type="number" name="plus" defaultValue={planPrices.plus} className="w-full border p-2 rounded" placeholder="$" /></div>
+                            <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Plan Pro</label><input type="number" name="pro" defaultValue={planPrices.pro} className="w-full border p-2 rounded" placeholder="$" /></div>
+                            <button className="w-full py-2 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700">Guardar Precios</button>
+                        </form>
+                    </div>
+                </div>
+            );
+
+            // --- Payment Modal ---
+            const PaymentModal = () => (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                        <div className="bg-emerald-600 p-4 text-white flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Registrar Pago</h3>
+                            <button onClick={() => setShowPaymentModal(false)}><Icon name="x-circle"/></button>
+                        </div>
+                        <div className="p-6 space-y-3">
+                            <p className="text-sm text-gray-600 mb-4">Selecciona el plan para imputar el pago:</p>
+                            <button onClick={() => handleSelectPlanPayment('Básico', planPrices.basic)} className="w-full py-3 bg-gray-100 hover:bg-gray-200 rounded-lg flex justify-between px-4 font-medium text-gray-800 border border-gray-300">
+                                <span>Plan Básico</span>
+                                <span className="text-emerald-600 font-bold">${planPrices.basic}</span>
+                            </button>
+                            <button onClick={() => handleSelectPlanPayment('Plus', planPrices.plus)} className="w-full py-3 bg-gray-100 hover:bg-gray-200 rounded-lg flex justify-between px-4 font-medium text-gray-800 border border-gray-300">
+                                <span>Plan Plus</span>
+                                <span className="text-emerald-600 font-bold">${planPrices.plus}</span>
+                            </button>
+                            <button onClick={() => handleSelectPlanPayment('Pro', planPrices.pro)} className="w-full py-3 bg-gray-100 hover:bg-gray-200 rounded-lg flex justify-between px-4 font-medium text-gray-800 border border-gray-300">
+                                <span>Plan Pro</span>
+                                <span className="text-emerald-600 font-bold">${planPrices.pro}</span>
+                            </button>
+                            <div className="relative pt-4 border-t mt-4">
+                                <p className="text-xs text-center text-gray-400 mb-2">O ingresar otro monto</p>
+                                <form onSubmit={(e) => {
+                                    e.preventDefault();
+                                    handleSelectPlanPayment('Manual', e.target.manual.value);
+                                }} className="flex gap-2">
+                                    <input type="number" name="manual" className="flex-1 border rounded px-2 text-sm" placeholder="Monto manual" required/>
+                                    <button className="bg-emerald-600 text-white px-3 py-1 rounded text-sm">OK</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            if (loading) return <div className="min-h-screen flex items-center justify-center text-blue-600 font-bold">Cargando OttakuFitScheduler...</div>;
+
+            if (view === 'login') return (
+                <div className="min-h-screen flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md fade-in border-t-4 border-blue-600">
+                        <div className="text-center mb-6"><h1 className="text-3xl font-bold text-gray-800">OttakuFitScheduler</h1><p className="text-gray-500">Acceso a Turnos</p></div>
+                        <form onSubmit={handleLogin} className="space-y-5">
+                            <div><label className="block text-sm font-medium text-gray-700">Email</label><div className="relative mt-1"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">@</div><input required type="email" name="email" className="pl-10 block w-full border-gray-300 rounded-md border p-2 focus:ring-blue-500 focus:border-blue-500" placeholder="usuario@email.com" /></div></div>
+                            <div><label className="block text-sm font-medium text-gray-700">Contraseña</label><PasswordInput name="password" placeholder="••••••" /></div>
+                            <button type="submit" disabled={isLoginLoading} className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-50">{isLoginLoading ? 'Ingresando...' : 'Iniciar Sesión'}</button>
+                            <div className="flex justify-between items-center mt-4 text-sm px-1">
+                                <button type="button" onClick={() => setView('register')} className="text-blue-600 hover:text-blue-700 font-medium">Crear cuenta</button>
+                                <button type="button" onClick={() => setView('recover-password')} className="text-gray-500 hover:text-gray-700 underline decoration-dotted">Olvidé mi clave</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+
+            if (view === 'recover-password') return (
+                <div className="min-h-screen flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md fade-in border-t-4 border-yellow-500">
+                        <div className="text-center mb-6">
+                            <h1 className="text-2xl font-bold text-gray-800">Recuperar Acceso</h1>
+                            <p className="text-gray-500 text-sm mt-1">El Coach gestiona las claves manualmente.</p>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Tu Email</label>
+                                <div className="relative mt-1">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icon name="mail" size={16}/></div>
+                                    <input type="email" id="recovery-email" onChange={(e) => setRecoveryEmail(e.target.value)} className="pl-10 block w-full border-gray-300 rounded-md border p-2 focus:ring-yellow-500 focus:border-yellow-500" placeholder="tu@email.com" />
+                                </div>
+                            </div>
+                            
+                            <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200 fade-in">
+                                <p className="text-xs text-gray-500 mb-1 uppercase font-bold tracking-wide">Copia y envía este mensaje por WhatsApp:</p>
+                                <textarea readOnly className="w-full text-sm bg-transparent border-none focus:ring-0 p-0 resize-none h-20 text-gray-700" value={`Hola Coach Gaston, soy ${recoveryEmail || '[mi email]'} y olvidé mi contraseña. Por favor, ¿podrías restablecerla?`}></textarea>
+                                <button onClick={() => copyToClipboard(`Hola Coach Gaston, soy ${recoveryEmail || '[mi email]'} y olvidé mi contraseña. Por favor, ¿podrías restablecerla?`)} className="mt-2 w-full flex items-center justify-center gap-2 text-xs bg-white border border-gray-300 py-2 rounded hover:bg-gray-100 font-medium text-gray-700 transition">
+                                    <Icon name="copy" size={14}/> Copiar Mensaje
+                                </button>
+                            </div>
+                            
+                            <button onClick={() => setView('login')} className="w-full text-center py-2 text-sm text-gray-500 hover:text-gray-700 transition mt-2">Volver al Login</button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            if (view === 'register') return (
+                <div className="min-h-screen flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md fade-in border-t-4 border-green-600">
+                        <div className="text-center mb-6"><h1 className="text-3xl font-bold text-gray-800">Registro de Alumno</h1></div>
+                        <form onSubmit={handleRegister} className="space-y-4">
+                            <div><label className="block text-sm font-medium text-gray-700">Email</label><input required type="email" name="email" className="mt-1 block w-full border-gray-300 rounded-md border p-2" placeholder="tu@email.com" /></div>
+                            <div><label className="block text-sm font-medium text-gray-700">Contraseña</label><PasswordInput name="password" placeholder="••••••" /></div>
+                            <div><label className="block text-sm font-medium text-gray-700">Confirmar Contraseña</label><PasswordInput name="confirmPassword" placeholder="••••••" /></div>
+                            <div className="pt-2 border-t mt-4 border-gray-100">
+                                <div><label className="block text-sm font-medium text-gray-700">Nombre Completo</label><input required type="text" name="name" className="mt-1 block w-full border-gray-300 rounded-md border p-2" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700">Dirección</label><input required type="text" name="address" className="mt-1 block w-full border-gray-300 rounded-md border p-2" placeholder="Ej. Av. Libertador 1234" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700">Teléfono</label><input required type="tel" name="phone" className="mt-1 block w-full border-gray-300 rounded-md border p-2" /></div>
+                            </div>
+                            <button type="submit" disabled={isLoginLoading} className="w-full py-2 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 transition disabled:opacity-50 mt-4">{isLoginLoading ? 'Registrando...' : 'Registrar'}</button>
+                            <button type="button" onClick={() => setView('login')} className="w-full text-center py-2 text-sm text-gray-500 hover:text-gray-700 transition">Volver</button>
+                        </form>
+                    </div>
+                </div>
+            );
+
+            if (view === 'complete-profile' || view === 'edit-profile') return (
+                <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50">
+                    <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md fade-in">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-2">{view === 'complete-profile' ? 'Completar Perfil' : 'Editar Perfil'}</h2>
+                        <form onSubmit={handleUpdateProfile} className="space-y-4">
+                            <div><label className="block text-sm font-medium text-gray-700">Nombre</label><input required type="text" name="name" defaultValue={profile.name} className="mt-1 block w-full border-gray-300 rounded-md border p-2" /></div>
+                            <div><label className="block text-sm font-medium text-gray-700">Dirección</label><div className="relative mt-1"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icon name="map-pin" size={16}/></div><input required type="text" name="address" defaultValue={profile.address || ''} className="pl-10 block w-full border-gray-300 rounded-md border p-2" /></div></div>
+                            <div><label className="block text-sm font-medium text-gray-700">Teléfono</label><div className="relative mt-1"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400"><Icon name="phone" size={16}/></div><input required type="tel" name="phone" defaultValue={profile.phone || ''} className="pl-10 block w-full border-gray-300 rounded-md border p-2" /></div></div>
+                            <button type="submit" className="w-full py-2 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 transition">Guardar</button>
+                            {view === 'edit-profile' && (<button type="button" onClick={() => setView('dashboard')} className="w-full py-2 text-gray-500 hover:text-gray-700 text-sm">Cancelar</button>)}
+                        </form>
+                    </div>
+                </div>
+            );
+
+            let myAppointments = profile.role === 'coach' ? appointments : appointments.filter(app => app.studentName === profile.name || app.studentEmail === profile.email || app.studentId === user?.uid);
+            
+            // Filtro del Coach por Fecha
+            if (filterDate && profile.role === 'coach') { myAppointments = myAppointments.filter(app => app.date === filterDate); }
+            
+            // Filtro del Estudiante por Estado
+            if (profile.role === 'student' && studentFilter !== 'Todos') {
+                myAppointments = myAppointments.filter(app => app.status === studentFilter);
+            }
+
+            return (
+                <div className="min-h-screen pb-12 relative">
+                    <nav className={`${profile.role === 'coach' ? 'bg-purple-700' : 'bg-blue-700'} text-white shadow-lg`}>
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex items-center justify-between h-16">
+                                <div className="flex items-center gap-2"><Icon name="calendar" className="text-white" /><span className="font-bold text-xl tracking-tight hidden sm:block">OttakuFitScheduler</span></div>
+                                <div className="flex items-center gap-4">
+                                    <div className="text-right hidden sm:block"><div className="text-sm font-medium">{profile.name}</div><div className="text-xs text-gray-300 uppercase">{profile.role === 'student' ? 'ALUMNO' : profile.role}</div></div>
+                                    {profile.role === 'student' && (<button onClick={() => setView('edit-profile')} className="p-2 rounded-full hover:bg-white/10 transition"><Icon name="edit" size={18}/></button>)}
+                                    <button onClick={handleLogout} className="p-2 rounded-full hover:bg-white/10 transition"><Icon name="log-out" size={18}/></button>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            
+                            <div className="md:col-span-1">
+                                {profile.role === 'student' ? (
+                                    <div className="bg-white rounded-xl shadow-md p-6 sticky top-8">
+                                        <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><Icon name="check-circle" className="text-blue-600"/> Nuevo Turno</h2>
+                                        <form onSubmit={handleBook} className="space-y-4">
+                                            <div><label className="block text-xs font-semibold text-gray-500 uppercase">Fecha</label><input required type="date" name="date" className="mt-1 block w-full rounded-md border-gray-300 border p-2 text-sm" defaultValue={getTodayString()} min={getTodayString()} onChange={(e) => setSelectedBookDate(e.target.value)}/></div>
+                                            {/* Selector de hora usando la funcion con filtro de ocupados */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-500 uppercase">Hora</label>
+                                                <select required name="time" className="mt-1 block w-full rounded-md border-gray-300 border p-2 text-sm">
+                                                    <option value="">Seleccionar</option>
+                                                    {getAvailableTimeSlots(selectedBookDate, appointments).map(slot => (
+                                                        <option key={slot} value={slot}>{slot}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            
+                                            {/* Nuevo Campo: Mensaje del Alumno */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-gray-500 uppercase">Mensaje al Coach (Opcional)</label>
+                                                <textarea name="message" className="mt-1 block w-full rounded-md border-gray-300 border p-2 text-sm" rows="2" placeholder="Ej: Tengo una molestia en la rodilla..."></textarea>
+                                            </div>
+
+                                            <div className="bg-gray-50 p-3 rounded text-xs text-gray-500"><p className="font-semibold mb-1">Entrenaremos en:</p><p><Icon name="map-pin" size={12} className="inline mr-1"/>{profile.address}</p></div>
+                                            <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition shadow-lg shadow-blue-500/30">Agendar Clase</button>
+                                        </form>
+                                    </div>
+                                ) : (
+                                    // Coach View Toggle
+                                    <div className="space-y-4">
+                                        {!showCoachAvailability ? (
+                                            <div className="bg-white rounded-xl shadow-md p-6 sticky top-8">
+                                                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center justify-between">
+                                                    Resumen Coach
+                                                    <button onClick={() => setShowPriceConfig(true)} title="Configurar Precios"><Icon name="settings" size={20} className="text-gray-400 hover:text-gray-600"/></button>
+                                                </h2>
+                                                <div className="space-y-4">
+                                                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-100"><div className="text-3xl font-bold text-purple-700">{appointments.filter(a => a.status === 'Pendiente').length}</div><div className="text-sm text-purple-600">Pendientes Totales</div></div>
+                                                    <div className="bg-green-50 p-4 rounded-lg border border-green-100"><div className="text-3xl font-bold text-green-700">{appointments.filter(a => a.status === 'Confirmado').length}</div><div className="text-sm text-green-600">Confirmados Totales</div></div>
+                                                    <div className="bg-gray-100 p-4 rounded-lg border border-gray-200"><div className="text-3xl font-bold text-gray-700">{appointments.filter(a => a.status === 'Asistido').length}</div><div className="text-sm text-gray-600">Clases Asistidas</div></div>
+                                                    <button onClick={() => setShowCoachBookingModal(true)} className="w-full py-2 mt-4 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700 flex items-center justify-center gap-2"><Icon name="calendar-plus" size={16}/> Agendar Clase</button>
+                                                    <button onClick={() => setShowCoachAvailability(true)} className="w-full py-2 bg-white text-gray-700 border border-gray-300 rounded text-sm font-medium hover:bg-gray-50 flex items-center justify-center gap-2"><Icon name="search" size={16}/> Ver Disponibilidad</button>
+                                                    <button onClick={() => setShowExportModal(true)} className="w-full py-2 bg-gray-800 text-white rounded text-sm font-medium hover:bg-gray-900 flex items-center justify-center gap-2"><Icon name="download" size={16}/> Exportar Reporte</button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <CoachAvailabilityView />
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="md:col-span-2 space-y-4">
+                                {profile.role === 'student' ? (
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                                        <h2 className="text-xl font-bold text-gray-800">Mis Turnos</h2>
+                                        <div className="flex gap-2 overflow-x-auto pb-2 w-full sm:w-auto no-scrollbar">
+                                             {['Todos', 'Pendiente', 'Confirmado', 'Asistido', 'Rechazado', 'Cancelado'].map(status => (
+                                                 <button 
+                                                    key={status}
+                                                    onClick={() => setStudentFilter(status)} 
+                                                    className={`px-3 py-1 rounded-full text-xs font-bold border transition whitespace-nowrap
+                                                        ${studentFilter === status 
+                                                            ? 'bg-gray-800 text-white border-gray-800' 
+                                                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                                                        }
+                                                    `}
+                                                 >
+                                                     {status === 'Todos' ? 'Todos' : status}
+                                                 </button>
+                                             ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                                        <h2 className="text-xl font-bold text-gray-800">{filterDate ? `Agenda del ${filterDate}` : 'Agenda Completa'}</h2>
+                                        <div className="flex items-center gap-2 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
+                                            <div className="flex items-center gap-1 text-gray-500 mr-2 border-r pr-2"><Icon name="filter" size={16}/><span className="text-xs font-bold uppercase tracking-wide">Filtro</span></div>
+                                            <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="text-sm border-none focus:ring-0 p-0 text-gray-600 bg-transparent"/>
+                                            {filterDate ? (<button onClick={() => setFilterDate('')} className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded transition">Ver Todos</button>) : (<button onClick={() => setFilterDate(getTodayString())} className="text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 px-2 py-1 rounded transition">Hoy</button>)}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {myAppointments.length === 0 ? (
+                                    <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300"><Icon name="calendar" size={48} className="mx-auto text-gray-300 mb-3"/><p className="text-gray-500">No hay turnos con este filtro.</p></div>
+                                ) : (
+                                    myAppointments.map((app) => (
+                                        <div key={app.id} className={`bg-white rounded-xl shadow-sm border border-gray-200 p-5 transition duration-200 flex flex-col sm:flex-row gap-4 justify-between fade-in ${app.status === 'Rechazado' || app.status === 'Cancelado' ? 'opacity-75 bg-red-50' : ''} ${app.status === 'Asistido' ? 'bg-gray-50' : ''}`}>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wide flex items-center gap-1 
+                                                        ${app.status === 'Pendiente' ? 'bg-yellow-100 text-yellow-800' : ''} 
+                                                        ${app.status === 'Confirmado' ? 'bg-green-100 text-green-800' : ''} 
+                                                        ${app.status === 'Asistido' ? 'bg-gray-200 text-gray-800' : ''} 
+                                                        ${app.status === 'Rechazado' || app.status === 'Cancelado' ? 'bg-red-100 text-red-800' : ''}`}>
+                                                        {app.status === 'Confirmado' && <Icon name="check-circle" size={12}/>}
+                                                        {app.status === 'Asistido' && <Icon name="user-check" size={12}/>}
+                                                        {app.status === 'Rechazado' && <Icon name="x-circle" size={12}/>}
+                                                        {app.status}
+                                                    </span>
+                                                    {/* Etiqueta de Pago */}
+                                                    {(app.status === 'Confirmado' || app.status === 'Asistido') && (
+                                                        <div className="flex gap-1">
+                                                            <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wide flex items-center gap-1 border
+                                                                ${app.paymentStatus === 'paid' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                                                <Icon name="dollar-sign" size={12}/> {app.paymentStatus === 'paid' ? 'Abonado' : 'Pendiente Pago'}
+                                                            </span>
+                                                            {/* Plan Tag - Updated */}
+                                                            {app.paymentStatus === 'paid' && app.paymentPlan && (
+                                                                 <span className="px-2 py-1 rounded text-xs font-bold uppercase tracking-wide flex items-center gap-1 border bg-blue-50 text-blue-700 border-blue-200">
+                                                                    <Icon name="tag" size={12}/> {app.paymentPlan}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="mt-2 space-y-1 text-sm text-gray-600">
+                                                    <div className="flex items-center gap-2"><Icon name="clock" size={14} className="text-gray-400"/><span className="font-medium text-gray-800">{app.date} a las {app.time}</span></div>
+                                                    <div className="flex items-center gap-2 mt-1 text-gray-500"><Icon name="map-pin" size={14} className="text-gray-400"/><span>{app.studentAddress}</span></div>
+                                                    {profile.role === 'coach' && (
+                                                        <div className="mt-3 pt-3 border-t border-gray-100">
+                                                            <div className="flex items-center gap-2 text-blue-600 font-medium"><Icon name="user" size={14}/> {app.studentName}</div>
+                                                            <div className="flex items-center gap-2 mt-1"><Icon name="phone" size={14}/> {app.studentPhone}</div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Sección de Mensajes */}
+                                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100 text-sm">
+                                                        {/* Mensaje del Alumno */}
+                                                        {app.message && (
+                                                            <div className="mb-2">
+                                                                <span className="block text-xs font-bold text-gray-500 uppercase">Nota del Alumno:</span>
+                                                                <p className="text-gray-700 italic">"{app.message}"</p>
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Mensaje/Respuesta del Coach */}
+                                                        {app.coachMessage ? (
+                                                            <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                <span className="block text-xs font-bold text-purple-600 uppercase">Mensaje del Coach:</span>
+                                                                <p className="text-gray-800 font-medium">"{app.coachMessage}"</p>
+                                                            </div>
+                                                        ) : (
+                                                            /* Formulario solo para Coach si no ha respondido */
+                                                            profile.role === 'coach' && app.status !== 'Cancelado' && app.status !== 'Rechazado' && app.status !== 'Asistido' && (
+                                                                <div className="mt-2 pt-2 border-t border-gray-200">
+                                                                    <span className="block text-xs font-bold text-gray-400 uppercase mb-1">Responder / Enviar Mensaje:</span>
+                                                                    <form onSubmit={(e) => { e.preventDefault(); handleSendCoachMessage(app.id, e.target.response.value); }} className="flex gap-2">
+                                                                        <input type="text" name="response" className="flex-1 text-xs border rounded px-2 py-1" placeholder="Escribe aquí..." />
+                                                                        <button type="submit" className="text-xs bg-purple-600 text-white px-2 py-1 rounded hover:bg-purple-700"><Icon name="send" size={12}/></button>
+                                                                    </form>
+                                                                </div>
+                                                            )
+                                                        )}
+
+                                                        {/* NOTAS PRIVADAS COACH */}
+                                                        {profile.role === 'coach' && (
+                                                            <div className="mt-2 pt-2 border-t border-gray-100">
+                                                                <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-1"><Icon name="lock" size={10}/> Nota Privada</label>
+                                                                <textarea 
+                                                                    defaultValue={app.coachNotes || ''} 
+                                                                    onBlur={(e) => handleSaveCoachNote(app.id, e.target.value)}
+                                                                    className="w-full text-xs border rounded p-1 mt-1 bg-yellow-50 focus:bg-white transition"
+                                                                    placeholder="Solo visible para ti..."
+                                                                    rows="1"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-row sm:flex-col gap-2 justify-center border-t sm:border-t-0 sm:border-l border-gray-100 pt-4 sm:pt-0 sm:pl-4">
+                                                {/* Boton Google Calendar */}
+                                                <button onClick={() => addToGoogleCalendar(app)} className="flex items-center justify-center gap-1 px-3 py-2 text-gray-500 border border-gray-200 rounded text-sm hover:bg-blue-50 w-full sm:w-auto mb-2" title="Agregar a Google Calendar">
+                                                    <Icon name="calendar-plus" size={16}/> <span className="sm:hidden">Agendar</span>
+                                                </button>
+
+                                                {/* Boton Pago Coach */}
+                                                {profile.role === 'coach' && (app.status === 'Confirmado' || app.status === 'Asistido') && app.paymentStatus !== 'paid' && (
+                                                    <button onClick={() => { setCurrentPayApp(app); setShowPaymentModal(true); }} className="flex items-center justify-center gap-1 px-3 py-2 bg-emerald-100 text-emerald-700 border border-emerald-200 rounded text-sm hover:bg-emerald-200 w-full sm:w-auto mb-2" title="Registrar Pago">
+                                                        <Icon name="dollar-sign" size={16}/> <span className="sm:hidden">Cobrar</span>
+                                                    </button>
+                                                )}
+
+                                                {profile.role === 'coach' && app.status === 'Pendiente' && (<><button onClick={() => handleStatusChangeWithPayment(app, 'Confirmado')} className="flex items-center justify-center gap-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 w-full sm:w-auto">Confirmar</button><button onClick={() => handleStatusChange(app.id, 'Rechazado')} className="flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto">Rechazar</button></>)}
+                                                {profile.role === 'coach' && app.status === 'Confirmado' && (<button onClick={() => handleStatusChange(app.id, 'Asistido')} className="flex items-center justify-center gap-1 px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 w-full sm:w-auto">Asistido</button>)}
+                                                {(app.status === 'Pendiente' || app.status === 'Confirmado') && (<button onClick={() => handleCancel(app, profile.role)} className="flex items-center justify-center gap-1 px-3 py-2 text-red-500 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto" title="Cancelar Turno"><span className="sm:hidden text-xs font-bold">CANCELAR</span><Icon name="ban" size={16}/></button>)}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* Export Modal */}
+                    {showExportModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
+                            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                                <div className="bg-gray-800 p-4 text-white flex justify-between items-center">
+                                    <h3 className="font-bold text-lg">Exportar Reporte</h3>
+                                    <button onClick={() => setShowExportModal(false)}><Icon name="x-circle"/></button>
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Inicio</label>
+                                        <input type="date" className="w-full border p-2 rounded" value={exportStart} onChange={(e) => setExportStart(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Fin</label>
+                                        <input type="date" className="w-full border p-2 rounded" value={exportEnd} onChange={(e) => setExportEnd(e.target.value)} />
+                                    </div>
+                                    <button onClick={handleExportCSV} className="w-full py-2 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700">Descargar CSV</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Coach Booking Modal */}
+                    {showCoachBookingModal && <CoachBookingModal />}
+                    
+                    {/* Price Config Modal */}
+                    {showPriceConfig && <PriceConfigModal />}
+
+                    {/* Payment Modal */}
+                    {showPaymentModal && <PaymentModal />}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
