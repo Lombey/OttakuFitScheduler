@@ -81,58 +81,72 @@
             const today = getTodayString();
             const minTime = getMinTime();
             
-            // 1. Identificar horarios ocupados en esa fecha.
-            // IMPORTANTE: Ignoramos 'Rechazado' Y 'Cancelado' para liberar el horario.
+            // 1. Obtener slots base según el día
+            const date = new Date(selectedDate + 'T12:00:00');
+            const dayOfWeek = date.getDay();
+
+            if (dayOfWeek === 0) return []; // Domingo cerrado
+
+            let startHour = 12; 
+            let endHour = 21;   
+
+            if (dayOfWeek === 6) { // Sabado
+                startHour = 13;
+                endHour = 16;
+            }
+
+            const dailySlots = [];
+            // Loop de hora en hora (en punto)
+            for (let h = startHour; h <= endHour; h++) {
+                const hourStr = String(h).padStart(2, '0') + ":00";
+                
+                // Reglas de cierre exacto
+                // Sábado cierra 16:00 (último turno 15:00 si duran 1h, o 16:00 si termina 17:00. Asumimos hasta 16:00 inclusive como inicio)
+                // Ajustemos a 16:00 como ultima hora de inicio posible si cierra a las 17:00, o 15:00 si cierra a las 16:00.
+                // El requerimiento fue "sabado de 13 a 16". Asumiremos 16:00 como limite.
+                
+                dailySlots.push(hourStr);
+            }
+
+            // 2. Identificar horarios ocupados
             const busyTimes = appointments
                 .filter(app => app.date === selectedDate && app.status !== 'Rechazado' && app.status !== 'Cancelado')
                 .map(app => app.time);
 
-            // 2. Filtrar slots base eliminando los ocupados
-            let available = timeSlots.filter(slot => !busyTimes.includes(slot));
+            // 3. Filtrar ocupados
+            let available = dailySlots.filter(slot => !busyTimes.includes(slot));
 
-            // 3. Si es hoy, filtrar también por hora pasada
+            // 4. Filtrar pasado si es hoy
             if (selectedDate === today && minTime) {
+                // Filtrar horas pasadas (comparación de strings funciona bien con formato HH:MM)
                 available = available.filter(slot => slot >= minTime);
             }
             
             return available;
         };
 
-        // --- Firebase Configuration & Initialization (HÍBRIDO) ---
+        // --- Firebase Configuration (FORZADO A TU PROYECTO) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBa_YrZXpzrsLqHpLZP22DkFJ4M80epuyw",
+            authDomain: "ottakufit-scheduler.firebaseapp.com",
+            projectId: "ottakufit-scheduler",
+            storageBucket: "ottakufit-scheduler.firebasestorage.app",
+            messagingSenderId: "382792722952",
+            appId: "1:382792722952:web:183878320850e456bcbfbd",
+            measurementId: "G-WK7JE75H96"
+        };
         
-        let firebaseConfig;
-        let appId;
+        const appId = 'ottaku-production-v1';
 
-        if (window.__firebase_config) {
-            try {
-                firebaseConfig = JSON.parse(window.__firebase_config);
-                appId = window.__app_id || 'default-app-id';
-            } catch (e) {
-                console.error("Error parseando config de entorno", e);
-            }
+        // Inicializar solo si no existe
+        if (!firebase.apps.length) { 
+            firebase.initializeApp(firebaseConfig); 
+        } else {
+            // Si ya existe (por el entorno de preview), intentamos usar esa instancia pero
+            // en este caso específico, para solucionar tu error, confiamos en que las credenciales
+            // arriba son las que mandan.
         }
 
-        if (!firebaseConfig) {
-            // --- CONFIGURACIÓN PARA GITHUB / PRODUCCIÓN ---
-            firebaseConfig = {
-                apiKey: "AIzaSyBa_YrZXpzrsLqHpLZP22DkFJ4M80epuyw",
-                authDomain: "ottakufit-scheduler.firebaseapp.com",
-                projectId: "ottakufit-scheduler",
-                storageBucket: "ottakufit-scheduler.firebasestorage.app",
-                messagingSenderId: "382792722952",
-                appId: "1:382792722952:web:183878320850e456bcbfbd",
-                measurementId: "G-WK7JE75H96"
-            };
-            appId = 'ottaku-production-v1'; 
-        }
-
-        if (firebaseConfig.projectId === "TU_PROYECTO_ID" && !window.__firebase_config) {
-            console.error("¡FALTA CONFIGURAR FIREBASE!");
-            document.body.innerHTML = "<h1 style='color:red; text-align:center; padding:20px'>Error: Falta configurar Firebase en el código.</h1>";
-            throw new Error("Firebase config incomplete"); 
-        }
-
-        if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
         const auth = firebase.auth();
         const db = firebase.firestore();
         
@@ -156,7 +170,6 @@
                 'lock': <><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>,
                 'trash': <><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></>,
                 'filter': <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>,
-                'message-circle': <path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/>,
                 'copy': <><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></>,
                 'user-check': <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></>,
                 'eye': <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
@@ -164,7 +177,9 @@
                 'send': <><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>,
                 'mail': <><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></>,
                 'ban': <><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></>,
-                'search': <><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></>
+                'search': <><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></>,
+                'download': <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></>,
+                'calendar-plus': <><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M10 16h4"/><path d="M12 14v4"/></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} onClick={onClick}>{icons[name]}</svg>;
         };
@@ -196,14 +211,19 @@
             const [selectedBookDate, setSelectedBookDate] = useState(getTodayString());
             const [recoveryEmail, setRecoveryEmail] = useState('');
             
-            // Coach Availability View State
+            // Coach States
             const [showCoachAvailability, setShowCoachAvailability] = useState(false);
             const [availabilityDate, setAvailabilityDate] = useState(getTodayString());
+            const [showExportModal, setShowExportModal] = useState(false);
+            const [exportStart, setExportStart] = useState(getTodayString());
+            const [exportEnd, setExportEnd] = useState(getTodayString());
 
             useEffect(() => {
                 const initAuth = async () => {
-                    if (window.__initial_auth_token) await auth.signInWithCustomToken(window.__initial_auth_token);
-                    else if (!auth.currentUser) await auth.signInAnonymously();
+                    // Forzar signInAnonymously para asegurar conexión a TU proyecto si no hay usuario
+                    if (!auth.currentUser) {
+                        await auth.signInAnonymously();
+                    }
                 };
                 initAuth();
                 const unsubscribe = auth.onAuthStateChanged((u) => { setUser(u); setLoading(false); });
@@ -225,7 +245,7 @@
                     const apps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     apps.sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
                     setAppointments(apps);
-                }, (error) => console.error(error));
+                }, (error) => console.error("Error leyendo turnos:", error));
                 return () => unsubscribeDb();
             }, [user]);
 
@@ -303,7 +323,10 @@
                 try { await getUsersCollection().doc(profile.email).update(updatedProfile); setProfile(updatedProfile); setView('dashboard'); } catch (error) { console.error(error); }
             };
 
-            const handleLogout = async () => { try { await auth.signOut(); } catch(e){} setProfile(null); setFilterDate(getTodayString()); setView('login'); setShowCoachAvailability(false); };
+            const handleLogout = async () => { 
+                // Soft logout (no sign out firebase to keep anon auth for next login attempt to same DB)
+                setProfile(null); setFilterDate(getTodayString()); setView('login'); setShowCoachAvailability(false); 
+            };
 
             const handleBook = async (e) => {
                 e.preventDefault();
@@ -374,6 +397,44 @@
                     document.execCommand('copy'); document.body.removeChild(ta);
                     alert("Copiado!");
                 } catch (e) { alert("Copia manual requerida."); }
+            };
+
+            // --- EXPORT FUNCTION ---
+            const handleExportCSV = () => {
+                const filtered = appointments.filter(app => {
+                    return app.date >= exportStart && app.date <= exportEnd;
+                });
+                if (filtered.length === 0) { alert("No hay turnos para exportar en este rango."); return; }
+
+                let csvContent = "data:text/csv;charset=utf-8,";
+                csvContent += "Fecha,Hora,Alumno,Email,Telefono,Direccion,Estado,Nota Alumno,Respuesta Coach\n";
+
+                filtered.forEach(row => {
+                    const cleanStr = (str) => `"${(str || '').replace(/"/g, '""')}"`; 
+                    csvContent += [row.date, row.time, cleanStr(row.studentName), cleanStr(row.studentEmail), cleanStr(row.studentPhone), cleanStr(row.studentAddress), row.status, cleanStr(row.message), cleanStr(row.coachMessage)].join(",") + "\n";
+                });
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `reporte_turnos_${exportStart}_${exportEnd}.csv`);
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                setShowExportModal(false);
+            };
+
+            // --- GOOGLE CALENDAR LINK ---
+            const addToGoogleCalendar = (app) => {
+                const sDate = app.date.replace(/-/g, '');
+                const sTime = app.time.replace(':', '') + '00';
+                const start = `${sDate}T${sTime}`;
+                let [h, m] = app.time.split(':').map(Number);
+                let endH = h + 1;
+                const eTime = String(endH).padStart(2, '0') + String(m).padStart(2, '0') + '00';
+                const end = `${sDate}T${eTime}`;
+                const title = encodeURIComponent("Entrenamiento OttakuFit");
+                const details = encodeURIComponent(`Alumno: ${app.studentName}\nTel: ${app.studentPhone}\nEstado: ${app.status}`);
+                const location = encodeURIComponent(app.studentAddress);
+                const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+                window.open(url, '_blank');
             };
 
             // --- Coach Availability View ---
@@ -578,6 +639,7 @@
                                                     <div className="bg-green-50 p-4 rounded-lg border border-green-100"><div className="text-3xl font-bold text-green-700">{appointments.filter(a => a.status === 'Confirmado').length}</div><div className="text-sm text-green-600">Confirmados Totales</div></div>
                                                     <div className="bg-gray-100 p-4 rounded-lg border border-gray-200"><div className="text-3xl font-bold text-gray-700">{appointments.filter(a => a.status === 'Asistido').length}</div><div className="text-sm text-gray-600">Clases Asistidas</div></div>
                                                     <button onClick={() => setShowCoachAvailability(true)} className="w-full py-2 mt-4 bg-indigo-600 text-white rounded text-sm font-medium hover:bg-indigo-700 flex items-center justify-center gap-2"><Icon name="search" size={16}/> Ver Disponibilidad</button>
+                                                    <button onClick={() => setShowExportModal(true)} className="w-full py-2 bg-gray-800 text-white rounded text-sm font-medium hover:bg-gray-900 flex items-center justify-center gap-2"><Icon name="download" size={16}/> Exportar Reporte</button>
                                                 </div>
                                             </div>
                                         ) : (
@@ -679,6 +741,11 @@
                                                 </div>
                                             </div>
                                             <div className="flex flex-row sm:flex-col gap-2 justify-center border-t sm:border-t-0 sm:border-l border-gray-100 pt-4 sm:pt-0 sm:pl-4">
+                                                {/* Boton Google Calendar */}
+                                                <button onClick={() => addToGoogleCalendar(app)} className="flex items-center justify-center gap-1 px-3 py-2 text-gray-500 border border-gray-200 rounded text-sm hover:bg-blue-50 w-full sm:w-auto mb-2" title="Agregar a Google Calendar">
+                                                    <Icon name="calendar-plus" size={16}/> <span className="sm:hidden">Agendar</span>
+                                                </button>
+
                                                 {profile.role === 'coach' && app.status === 'Pendiente' && (<><button onClick={() => handleStatusChange(app.id, 'Confirmado')} className="flex items-center justify-center gap-1 px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 w-full sm:w-auto">Confirmar</button><button onClick={() => handleStatusChange(app.id, 'Rechazado')} className="flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto">Rechazar</button></>)}
                                                 {profile.role === 'coach' && app.status === 'Confirmado' && (<button onClick={() => handleStatusChange(app.id, 'Asistido')} className="flex items-center justify-center gap-1 px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 w-full sm:w-auto">Asistido</button>)}
                                                 {(app.status === 'Pendiente' || app.status === 'Confirmado') && (<button onClick={() => handleCancel(app, profile.role)} className="flex items-center justify-center gap-1 px-3 py-2 text-red-500 border border-red-200 rounded text-sm hover:bg-red-50 w-full sm:w-auto" title="Cancelar Turno"><span className="sm:hidden text-xs font-bold">CANCELAR</span><Icon name="ban" size={16}/></button>)}
@@ -689,6 +756,29 @@
                             </div>
                         </div>
                     </main>
+
+                    {/* Export Modal */}
+                    {showExportModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
+                            <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden">
+                                <div className="bg-gray-800 p-4 text-white flex justify-between items-center">
+                                    <h3 className="font-bold text-lg">Exportar Reporte</h3>
+                                    <button onClick={() => setShowExportModal(false)}><Icon name="x-circle"/></button>
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Inicio</label>
+                                        <input type="date" className="w-full border p-2 rounded" value={exportStart} onChange={(e) => setExportStart(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Fecha Fin</label>
+                                        <input type="date" className="w-full border p-2 rounded" value={exportEnd} onChange={(e) => setExportEnd(e.target.value)} />
+                                    </div>
+                                    <button onClick={handleExportCSV} className="w-full py-2 bg-indigo-600 text-white rounded font-medium hover:bg-indigo-700">Descargar CSV</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
